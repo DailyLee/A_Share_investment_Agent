@@ -78,6 +78,19 @@ def market_data_agent(state: AgentState):
     # 转换价格数据为字典格式
     prices_dict = prices_df.to_dict('records')
 
+    # 获取 market_cap，优先使用 market_data，如果为0则尝试从 financial_metrics 获取
+    market_cap = market_data.get("market_cap", 0)
+    if market_cap <= 0 and financial_metrics and len(financial_metrics) > 0:
+        # 尝试从 financial_metrics 中获取 market_cap 作为后备方案
+        fallback_market_cap = financial_metrics[0].get("market_cap", 0)
+        if fallback_market_cap > 0:
+            logger.info(f"从 financial_metrics 获取 market_cap: {fallback_market_cap}")
+            market_cap = fallback_market_cap
+            # 更新 market_data 中的 market_cap
+            market_data["market_cap"] = market_cap
+        else:
+            logger.warning(f"无法获取 {ticker} 的市场市值数据，market_cap 将为 0")
+
     # 保存推理信息到metadata供API使用
     market_data_summary = {
         "ticker": ticker,
@@ -105,7 +118,7 @@ def market_data_agent(state: AgentState):
             "end_date": end_date,
             "financial_metrics": financial_metrics,
             "financial_line_items": financial_line_items,
-            "market_cap": market_data.get("market_cap", 0),
+            "market_cap": market_cap,
             "market_data": market_data,
         },
         "metadata": state["metadata"],

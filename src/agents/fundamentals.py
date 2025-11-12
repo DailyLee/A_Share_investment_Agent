@@ -18,7 +18,18 @@ def fundamentals_agent(state: AgentState):
     show_workflow_status("Fundamentals Analyst")
     show_reasoning = state["metadata"]["show_reasoning"]
     data = state["data"]
-    metrics = data["financial_metrics"][0]
+    
+    # 检查财务指标数据是否可用
+    financial_metrics_list = data.get("financial_metrics", [])
+    if not financial_metrics_list or len(financial_metrics_list) == 0:
+        logger.warning("⚠️ 财务指标数据不可用（可能 API 调用失败）")
+        metrics = {}
+    else:
+        metrics = financial_metrics_list[0]
+        # 检查 metrics 是否为空字典
+        if not metrics or len(metrics) == 0:
+            logger.warning("⚠️ 财务指标数据为空字典（可能 API 调用失败）")
+            metrics = {}
 
     # Initialize signals list for different fundamental aspects
     signals = []
@@ -41,6 +52,9 @@ def fundamentals_agent(state: AgentState):
 
     signals.append('bullish' if profitability_score >=
                    2 else 'bearish' if profitability_score == 0 else 'neutral')
+    # 检查是否有任何财务数据
+    has_data = any(metrics.get(key) is not None for key in ['return_on_equity', 'net_margin', 'operating_margin'])
+    
     reasoning["profitability_signal"] = {
         "signal": signals[0],
         "details": (
@@ -52,7 +66,7 @@ def fundamentals_agent(state: AgentState):
         ) + ", " + (
             f"Op Margin: {metrics.get('operating_margin', 0):.2%}" if metrics.get(
                 "operating_margin") is not None else "Op Margin: N/A"
-        )
+        ) + (" (数据获取失败，请检查 API 连接)" if not has_data else "")
     }
 
     # 2. Growth Analysis
@@ -72,6 +86,8 @@ def fundamentals_agent(state: AgentState):
 
     signals.append('bullish' if growth_score >=
                    2 else 'bearish' if growth_score == 0 else 'neutral')
+    has_growth_data = any(metrics.get(key) is not None for key in ['revenue_growth', 'earnings_growth'])
+    
     reasoning["growth_signal"] = {
         "signal": signals[1],
         "details": (
@@ -80,7 +96,7 @@ def fundamentals_agent(state: AgentState):
         ) + ", " + (
             f"Earnings Growth: {metrics.get('earnings_growth', 0):.2%}" if metrics.get(
                 "earnings_growth") is not None else "Earnings Growth: N/A"
-        )
+        ) + (" (数据获取失败，请检查 API 连接)" if not has_growth_data else "")
     }
 
     # 3. Financial Health
@@ -100,6 +116,8 @@ def fundamentals_agent(state: AgentState):
 
     signals.append('bullish' if health_score >=
                    2 else 'bearish' if health_score == 0 else 'neutral')
+    has_health_data = any(metrics.get(key) is not None for key in ['current_ratio', 'debt_to_equity'])
+    
     reasoning["financial_health_signal"] = {
         "signal": signals[2],
         "details": (
@@ -108,7 +126,7 @@ def fundamentals_agent(state: AgentState):
         ) + ", " + (
             f"D/E: {metrics.get('debt_to_equity', 0):.2f}" if metrics.get(
                 "debt_to_equity") is not None else "D/E: N/A"
-        )
+        ) + (" (数据获取失败，请检查 API 连接)" if not has_health_data else "")
     }
 
     # 4. Price to X ratios
@@ -128,6 +146,8 @@ def fundamentals_agent(state: AgentState):
 
     signals.append('bullish' if price_ratio_score >=
                    2 else 'bearish' if price_ratio_score == 0 else 'neutral')
+    has_valuation_data = any([pe_ratio, price_to_book, price_to_sales])
+    
     reasoning["price_ratios_signal"] = {
         "signal": signals[3],
         "details": (
@@ -136,7 +156,7 @@ def fundamentals_agent(state: AgentState):
             f"P/B: {price_to_book:.2f}" if price_to_book else "P/B: N/A"
         ) + ", " + (
             f"P/S: {price_to_sales:.2f}" if price_to_sales else "P/S: N/A"
-        )
+        ) + (" (数据获取失败，请检查 API 连接)" if not has_valuation_data else "")
     }
 
     # Determine overall signal

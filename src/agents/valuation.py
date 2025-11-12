@@ -21,6 +21,13 @@ def valuation_agent(state: AgentState):
 
     reasoning = {}
 
+    # Get earnings growth rate with fallback to default value
+    earnings_growth = metrics.get("earnings_growth", 0.05)  # Default 5% if not available
+    
+    # Log warning if data is missing
+    if "earnings_growth" not in metrics:
+        logger.warning("earnings_growth not found in metrics, using default value of 5%")
+
     # Calculate working capital change
     working_capital_change = (current_financial_line_item.get(
         'working_capital') or 0) - (previous_financial_line_item.get('working_capital') or 0)
@@ -32,7 +39,7 @@ def valuation_agent(state: AgentState):
             'depreciation_and_amortization'),
         capex=current_financial_line_item.get('capital_expenditure'),
         working_capital_change=working_capital_change,
-        growth_rate=metrics["earnings_growth"],
+        growth_rate=earnings_growth,
         required_return=0.15,
         margin_of_safety=0.25
     )
@@ -40,33 +47,51 @@ def valuation_agent(state: AgentState):
     # DCF Valuation
     dcf_value = calculate_intrinsic_value(
         free_cash_flow=current_financial_line_item.get('free_cash_flow'),
-        growth_rate=metrics["earnings_growth"],
+        growth_rate=earnings_growth,
         discount_rate=0.10,
         terminal_growth_rate=0.03,
         num_years=5,
     )
 
-    # Calculate combined valuation gap (average of both methods)
-    dcf_gap = (dcf_value - market_cap) / market_cap
-    owner_earnings_gap = (owner_earnings_value - market_cap) / market_cap
-    valuation_gap = (dcf_gap + owner_earnings_gap) / 2
-
-    if valuation_gap > 0.10:  # Changed from 0.15 to 0.10 (10% undervalued)
-        signal = 'bullish'
-    elif valuation_gap < -0.20:  # Changed from -0.15 to -0.20 (20% overvalued)
-        signal = 'bearish'
-    else:
+    # Check if market_cap is valid
+    if market_cap <= 0:
+        logger.warning(f"Invalid market_cap: {market_cap}, cannot perform valuation analysis")
         signal = 'neutral'
+        valuation_gap = 0
+        dcf_gap = 0
+        owner_earnings_gap = 0
+        
+        reasoning["dcf_analysis"] = {
+            "signal": "neutral",
+            "details": "Unable to calculate - market cap data unavailable"
+        }
+        
+        reasoning["owner_earnings_analysis"] = {
+            "signal": "neutral",
+            "details": "Unable to calculate - market cap data unavailable"
+        }
+    else:
+        # Calculate combined valuation gap (average of both methods)
+        dcf_gap = (dcf_value - market_cap) / market_cap
+        owner_earnings_gap = (owner_earnings_value - market_cap) / market_cap
+        valuation_gap = (dcf_gap + owner_earnings_gap) / 2
 
-    reasoning["dcf_analysis"] = {
-        "signal": "bullish" if dcf_gap > 0.10 else "bearish" if dcf_gap < -0.20 else "neutral",
-        "details": f"Intrinsic Value: ${dcf_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {dcf_gap:.1%}"
-    }
+        if valuation_gap > 0.10:  # Changed from 0.15 to 0.10 (10% undervalued)
+            signal = 'bullish'
+        elif valuation_gap < -0.20:  # Changed from -0.15 to -0.20 (20% overvalued)
+            signal = 'bearish'
+        else:
+            signal = 'neutral'
 
-    reasoning["owner_earnings_analysis"] = {
-        "signal": "bullish" if owner_earnings_gap > 0.10 else "bearish" if owner_earnings_gap < -0.20 else "neutral",
-        "details": f"Owner Earnings Value: ${owner_earnings_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {owner_earnings_gap:.1%}"
-    }
+        reasoning["dcf_analysis"] = {
+            "signal": "bullish" if dcf_gap > 0.10 else "bearish" if dcf_gap < -0.20 else "neutral",
+            "details": f"Intrinsic Value: ${dcf_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {dcf_gap:.1%}"
+        }
+
+        reasoning["owner_earnings_analysis"] = {
+            "signal": "bullish" if owner_earnings_gap > 0.10 else "bearish" if owner_earnings_gap < -0.20 else "neutral",
+            "details": f"Owner Earnings Value: ${owner_earnings_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {owner_earnings_gap:.1%}"
+        }
 
     message_content = {
         "signal": signal,

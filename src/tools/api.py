@@ -16,18 +16,30 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
     try:
         # 获取实时行情数据（用于市值和估值比率）
         logger.info("Fetching real-time quotes...")
-        realtime_data = ak.stock_zh_a_spot_em()
-        if realtime_data is None or realtime_data.empty:
-            logger.warning("No real-time quotes data available")
-            return [{}]
-
-        stock_data = realtime_data[realtime_data['代码'] == symbol]
-        if stock_data.empty:
-            logger.warning(f"No real-time quotes found for {symbol}")
-            return [{}]
-
-        stock_data = stock_data.iloc[0]
-        logger.info("✓ Real-time quotes fetched")
+        stock_data = None
+        try:
+            realtime_data = ak.stock_zh_a_spot_em()
+            if realtime_data is not None and not realtime_data.empty:
+                stock_data_filtered = realtime_data[realtime_data['代码'] == symbol]
+                if not stock_data_filtered.empty:
+                    stock_data = stock_data_filtered.iloc[0]
+                    logger.info("✓ Real-time quotes fetched")
+                else:
+                    logger.warning(f"No real-time quotes found for {symbol}")
+            else:
+                logger.warning("No real-time quotes data available")
+        except Exception as e:
+            logger.warning(f"Failed to fetch real-time quotes: {e}")
+            logger.info("Continuing without real-time quotes data...")
+        
+        # 如果无法获取实时行情数据，创建默认的 stock_data
+        if stock_data is None:
+            stock_data = pd.Series({
+                "总市值": 0,
+                "流通市值": 0,
+                "市盈率-动态": 0,
+                "市净率": 0
+            })
 
         # 获取新浪财务指标
         logger.info("Fetching Sina financial indicators...")
@@ -105,6 +117,10 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
 
             # 只返回 agent 需要的指标
             agent_metrics = {
+                # 市场数据（用于估值分析）
+                "market_cap": all_metrics["market_cap"],
+                "float_market_cap": all_metrics["float_market_cap"],
+                
                 # 盈利能力指标
                 "return_on_equity": all_metrics["return_on_equity"],
                 "net_margin": all_metrics["net_margin"],
@@ -283,8 +299,32 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
     """获取市场数据"""
     try:
         # 获取实时行情
-        realtime_data = ak.stock_zh_a_spot_em()
-        stock_data = realtime_data[realtime_data['代码'] == symbol].iloc[0]
+        stock_data = None
+        try:
+            realtime_data = ak.stock_zh_a_spot_em()
+            if realtime_data is not None and not realtime_data.empty:
+                stock_data_filtered = realtime_data[realtime_data['代码'] == symbol]
+                if not stock_data_filtered.empty:
+                    stock_data = stock_data_filtered.iloc[0]
+                    logger.info(f"✓ Market data fetched for {symbol}")
+                else:
+                    logger.warning(f"No market data found for {symbol}")
+            else:
+                logger.warning("No real-time quotes data available")
+        except Exception as e:
+            logger.warning(f"Failed to fetch real-time quotes: {e}")
+            logger.info("Continuing without market data...")
+        
+        # 如果无法获取实时行情数据，返回默认值
+        if stock_data is None:
+            logger.warning("Using default values for market data")
+            return {
+                "market_cap": 0,
+                "volume": 0,
+                "average_volume": 0,
+                "fifty_two_week_high": 0,
+                "fifty_two_week_low": 0
+            }
 
         return {
             "market_cap": float(stock_data.get("总市值", 0)),
@@ -297,7 +337,13 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error getting market data: {e}")
-        return {}
+        return {
+            "market_cap": 0,
+            "volume": 0,
+            "average_volume": 0,
+            "fifty_two_week_high": 0,
+            "fifty_two_week_low": 0
+        }
 
 
 def get_price_history(symbol: str, start_date: str = None, end_date: str = None, adjust: str = "qfq") -> pd.DataFrame:
