@@ -52,6 +52,13 @@ try:
 except ImportError:
     HAS_STRUCTURED_OUTPUT = False
 
+# --- Import Portfolio Report Generator ---
+try:
+    from src.utils.portfolio_report import generate_portfolio_report
+    HAS_PORTFOLIO_REPORT = True
+except ImportError:
+    HAS_PORTFOLIO_REPORT = False
+
 # --- Initialize Logging ---
 log_storage = get_log_storage()
 set_global_log_storage(log_storage)
@@ -99,6 +106,10 @@ def run_hedge_fund(run_id: str, ticker: str, start_date: str, end_date: str, por
 
             if HAS_STRUCTURED_OUTPUT and show_reasoning:
                 print_structured_output(final_state)
+            
+            # 生成投资组合分析报告
+            if HAS_PORTFOLIO_REPORT:
+                generate_portfolio_report(final_state, show_reasoning=show_reasoning)
     except ImportError:
         final_state = app.invoke(initial_state)
         print(f"--- Finished Workflow Run ID: {run_id} ---")
@@ -110,6 +121,10 @@ def run_hedge_fund(run_id: str, ticker: str, start_date: str, end_date: str, por
 
         if HAS_STRUCTURED_OUTPUT and show_reasoning:
             print_structured_output(final_state)
+        
+        # 生成投资组合分析报告
+        if HAS_PORTFOLIO_REPORT:
+            generate_portfolio_report(final_state, show_reasoning=show_reasoning)
         try:
             api_state.complete_run(run_id, "completed")
         except Exception:
