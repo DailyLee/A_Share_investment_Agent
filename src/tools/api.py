@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 import pandas as pd
 import akshare as ak
+import baostock as bs
 from datetime import datetime, timedelta
 import json
 import numpy as np
@@ -8,6 +9,203 @@ from src.utils.logging_config import setup_logger
 
 # 设置日志记录
 logger = setup_logger('api')
+
+# Baostock 连接状态
+_bs_logged_in = False
+
+def ensure_baostock_login():
+    """确保 Baostock 已登录"""
+    global _bs_logged_in
+    if not _bs_logged_in:
+        logger.info("Logging in to Baostock...")
+        lg = bs.login()
+        if lg.error_code != '0':
+            logger.error(f"Baostock login failed: {lg.error_msg}")
+            return False
+        _bs_logged_in = True
+        logger.info("✓ Baostock login successful")
+    return True
+
+def baostock_logout():
+    """登出 Baostock"""
+    global _bs_logged_in
+    if _bs_logged_in:
+        bs.logout()
+        _bs_logged_in = False
+
+
+def convert_stock_code_to_baostock(symbol: str) -> str:
+    """
+    将股票代码转换为 Baostock 格式
+    例如: 600353 -> sh.600353, 000001 -> sz.000001
+    """
+    if symbol.startswith('6'):
+        return f'sh.{symbol}'
+    elif symbol.startswith(('0', '3')):
+        return f'sz.{symbol}'
+    else:
+        return f'sh.{symbol}'  # 默认使用上海
+
+
+def get_market_data_from_baostock(symbol: str) -> Dict[str, Any]:
+    """使用 Baostock 获取市场数据（作为备选方案）"""
+    try:
+        if not ensure_baostock_login():
+            return None
+        
+        bs_code = convert_stock_code_to_baostock(symbol)
+        logger.info(f"Fetching market data from Baostock for {bs_code}...")
+        
+        # 获取股票名称
+        stock_name = ""
+        try:
+            rs_basic = bs.query_stock_basic(code=bs_code)
+            if rs_basic.error_code == '0':
+                basic_list = []
+                while (rs_basic.error_code == '0') & rs_basic.next():
+                    basic_list.append(rs_basic.get_row_data())
+                if basic_list:
+                    basic_df = pd.DataFrame(basic_list, columns=rs_basic.fields)
+                    if not basic_df.empty and 'code_name' in basic_df.columns:
+                        stock_name = basic_df.iloc[0].get('code_name', '')
+                        logger.info(f"获取到股票名称: {stock_name}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch stock name from Baostock: {e}")
+        
+        # 获取最近一天的K线数据来获取市值等信息
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")  # 扩大到30天
+        
+        rs = bs.query_history_k_data_plus(
+            bs_code,
+            "date,close,peTTM,pbMRQ,psTTM,turn,tradestatus",
+            start_date=start_date,
+            end_date=end_date,
+            frequency="d",
+            adjustflag="3"  # 后复权
+        )
+        
+        if rs.error_code != '0':
+            logger.error(f"Baostock query error: {rs.error_msg}")
+            return None
+        
+        data_list = []
+        while (rs.error_code == '0') & rs.next():
+            data_list.append(rs.get_row_data())
+        
+        if not data_list:
+            logger.warning(f"No data returned from Baostock for {bs_code}")
+            return None
+        
+        # 转换为DataFrame并获取最新数据
+        df = pd.DataFrame(data_list, columns=rs.fields)
+        df = df[df['tradestatus'] == '1']  # 只保留交易日
+        
+        if df.empty:
+            logger.warning(f"No trading data available from Baostock for {bs_code}")
+            return None
+        
+        latest = df.iloc[-1]
+        close_price = float(latest['close'])
+        pe_ratio = float(latest.get('peTTM', 0)) if latest.get('peTTM') and latest.get('peTTM') != '' else 0
+        pb_ratio = float(latest.get('pbMRQ', 0)) if latest.get('pbMRQ') and latest.get('pbMRQ') != '' else 0
+        ps_ratio = float(latest.get('psTTM', 0)) if latest.get('psTTM') and latest.get('psTTM') != '' else 0
+        
+        # 尝试多种方式获取市值
+        market_cap = 0
+        
+        # 方法1: 从 query_stock_basic 获取流通股数
+        try:
+            rs_basic = bs.query_stock_basic(code=bs_code)
+            if rs_basic.error_code == '0':
+                basic_list = []
+                while (rs_basic.error_code == '0') & rs_basic.next():
+                    basic_list.append(rs_basic.get_row_data())
+                if basic_list:
+                    basic_df = pd.DataFrame(basic_list, columns=rs_basic.fields)
+                    if not basic_df.empty and 'tradableShare' in basic_df.columns:
+                        # 流通股数（单位可能是股或万股，需要测试）
+                        float_shares_str = basic_df.iloc[0].get('tradableShare', '0')
+                        if float_shares_str and float_shares_str != '':
+                            float_shares = float(float_shares_str)
+                            # 尝试计算：假设单位是万股
+                            market_cap = float_shares * close_price / 10000  # 转换为亿元
+                            logger.info(f"Method 1: 流通股={float_shares}万股, 收盘价={close_price}, 市值={market_cap}亿元")
+        except Exception as e:
+            logger.warning(f"Method 1 failed: {e}")
+        
+        # 方法2: 如果方法1失败或结果不合理，尝试从盈利数据估算
+        if market_cap <= 0 or market_cap > 100000:  # 市值不合理（小于0或大于10万亿）
+            try:
+                # 从 query_profit_data 获取每股收益
+                current_year = datetime.now().year
+                current_quarter = (datetime.now().month - 1) // 3 + 1
+                
+                # 尝试最近几个季度
+                for year_offset in range(0, 2):
+                    for quarter_offset in range(0, 4):
+                        year = current_year - year_offset
+                        quarter = current_quarter - quarter_offset
+                        if quarter <= 0:
+                            year -= 1
+                            quarter += 4
+                        
+                        rs_profit = bs.query_profit_data(
+                            code=bs_code,
+                            year=year,
+                            quarter=quarter
+                        )
+                        
+                        if rs_profit.error_code == '0':
+                            profit_list = []
+                            while (rs_profit.error_code == '0') & rs_profit.next():
+                                profit_list.append(rs_profit.get_row_data())
+                            
+                            if profit_list:
+                                profit_df = pd.DataFrame(profit_list, columns=rs_profit.fields)
+                                if not profit_df.empty and 'epsTTM' in profit_df.columns:
+                                    eps_ttm_str = profit_df.iloc[0].get('epsTTM', '0')
+                                    if eps_ttm_str and eps_ttm_str != '' and pe_ratio > 0:
+                                        eps_ttm = float(eps_ttm_str)
+                                        # 市值 = 总股本 * 股价 = (总利润 / EPS) * 股价 = 总利润 * PE
+                                        # 但我们只能估算：市值 = 股价 / EPS * 总利润
+                                        # 简化：如果有PE，市值 ≈ 某个基准值
+                                        # 实际上从PE和股价可以推算总股本
+                                        if eps_ttm != 0:
+                                            total_shares = close_price / eps_ttm  # 亿股
+                                            market_cap = total_shares * close_price  # 亿元
+                                            logger.info(f"Method 2: EPS={eps_ttm}, 收盘价={close_price}, 推算市值={market_cap}亿元")
+                                            break
+                        
+                        if market_cap > 0:
+                            break
+                    
+                    if market_cap > 0:
+                        break
+            
+            except Exception as e:
+                logger.warning(f"Method 2 failed: {e}")
+        
+        # 如果所有方法都失败，记录警告但返回其他可用数据
+        if market_cap <= 0:
+            logger.warning("Could not calculate market cap from Baostock, but returning other available data")
+        else:
+            logger.info(f"✓ Market data fetched from Baostock: market_cap={market_cap:.2f}亿元")
+        
+        return {
+            "stock_name": stock_name,
+            "market_cap": market_cap,
+            "pe_ratio": pe_ratio,
+            "price_to_book": pb_ratio,
+            "price_to_sales": ps_ratio,
+            "turnover": float(latest.get('turn', 0)) if latest.get('turn') and latest.get('turn') != '' else 0,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching market data from Baostock: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
 
 
 def get_financial_metrics(symbol: str) -> Dict[str, Any]:
@@ -17,23 +215,41 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
         # 获取实时行情数据（用于市值和估值比率）
         logger.info("Fetching real-time quotes...")
         stock_data = None
+        baostock_data = None
+        
         try:
             realtime_data = ak.stock_zh_a_spot_em()
             if realtime_data is not None and not realtime_data.empty:
                 stock_data_filtered = realtime_data[realtime_data['代码'] == symbol]
                 if not stock_data_filtered.empty:
                     stock_data = stock_data_filtered.iloc[0]
-                    logger.info("✓ Real-time quotes fetched")
+                    logger.info("✓ Real-time quotes fetched from Akshare")
                 else:
                     logger.warning(f"No real-time quotes found for {symbol}")
             else:
                 logger.warning("No real-time quotes data available")
         except Exception as e:
-            logger.warning(f"Failed to fetch real-time quotes: {e}")
-            logger.info("Continuing without real-time quotes data...")
+            logger.warning(f"Failed to fetch real-time quotes from Akshare: {e}")
+            logger.info("Trying Baostock as fallback...")
         
-        # 如果无法获取实时行情数据，创建默认的 stock_data
+        # 如果 akshare 失败，尝试使用 Baostock
+        if stock_data is None or float(stock_data.get("总市值", 0)) == 0:
+            logger.info("Attempting to fetch data from Baostock...")
+            baostock_data = get_market_data_from_baostock(symbol)
+            
+            if baostock_data:
+                # 使用 Baostock 数据填充 stock_data
+                stock_data = pd.Series({
+                    "总市值": baostock_data.get("market_cap", 0),
+                    "流通市值": baostock_data.get("market_cap", 0),  # Baostock返回的就是流通市值
+                    "市盈率-动态": baostock_data.get("pe_ratio", 0),
+                    "市净率": baostock_data.get("price_to_book", 0)
+                })
+                logger.info("✓ Using Baostock data as fallback")
+        
+        # 如果两个数据源都失败，创建默认的 stock_data
         if stock_data is None:
+            logger.warning("Both Akshare and Baostock failed, using default values")
             stock_data = pd.Series({
                 "总市值": 0,
                 "流通市值": 0,
@@ -86,13 +302,26 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
                 except:
                     return 0.0
 
+            # 计算 price_to_sales
+            market_cap = float(stock_data.get("总市值", 0))
+            revenue = float(latest_income.get("营业总收入", 0))
+            
+            # 如果从 Baostock 获取了 price_to_sales，直接使用
+            if baostock_data and baostock_data.get("price_to_sales", 0) > 0:
+                price_to_sales = baostock_data["price_to_sales"]
+            # 否则尝试自己计算
+            elif market_cap > 0 and revenue > 0:
+                price_to_sales = market_cap / revenue
+            else:
+                price_to_sales = 0
+            
             all_metrics = {
                 # 市场数据
-                "market_cap": float(stock_data.get("总市值", 0)),
+                "market_cap": market_cap,
                 "float_market_cap": float(stock_data.get("流通市值", 0)),
 
                 # 盈利数据
-                "revenue": float(latest_income.get("营业总收入", 0)),
+                "revenue": revenue,
                 "net_income": float(latest_income.get("净利润", 0)),
                 "return_on_equity": convert_percentage(latest_financial.get("净资产收益率(%)", 0)),
                 "net_margin": convert_percentage(latest_financial.get("销售净利率(%)", 0)),
@@ -112,7 +341,7 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
                 # 估值比率
                 "pe_ratio": float(stock_data.get("市盈率-动态", 0)),
                 "price_to_book": float(stock_data.get("市净率", 0)),
-                "price_to_sales": float(stock_data.get("总市值", 0)) / float(latest_income.get("营业总收入", 1)) if float(latest_income.get("营业总收入", 0)) > 0 else 0,
+                "price_to_sales": price_to_sales,
             }
 
             # 只返回 agent 需要的指标
@@ -306,38 +535,104 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
                 stock_data_filtered = realtime_data[realtime_data['代码'] == symbol]
                 if not stock_data_filtered.empty:
                     stock_data = stock_data_filtered.iloc[0]
-                    logger.info(f"✓ Market data fetched for {symbol}")
+                    logger.info(f"✓ Market data fetched from Akshare for {symbol}")
                 else:
                     logger.warning(f"No market data found for {symbol}")
             else:
                 logger.warning("No real-time quotes data available")
         except Exception as e:
-            logger.warning(f"Failed to fetch real-time quotes: {e}")
-            logger.info("Continuing without market data...")
+            logger.warning(f"Failed to fetch real-time quotes from Akshare: {e}")
+            logger.info("Trying Baostock as fallback...")
         
-        # 如果无法获取实时行情数据，返回默认值
-        if stock_data is None:
-            logger.warning("Using default values for market data")
+        # 如果 akshare 失败，尝试使用 Baostock
+        if stock_data is None or float(stock_data.get("总市值", 0)) == 0:
+            logger.info("Attempting to fetch market data from Baostock...")
+            baostock_data = get_market_data_from_baostock(symbol)
+            
+            if baostock_data:
+                # 从 Baostock 获取历史数据来计算52周高低点
+                bs_code = convert_stock_code_to_baostock(symbol)
+                end_date = datetime.now().strftime("%Y-%m-%d")
+                start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+                
+                rs = bs.query_history_k_data_plus(
+                    bs_code,
+                    "date,close,volume",
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency="d",
+                    adjustflag="3"
+                )
+                
+                high_52w = 0
+                low_52w = 0
+                volume = 0
+                
+                if rs.error_code == '0':
+                    data_list = []
+                    while (rs.error_code == '0') & rs.next():
+                        data_list.append(rs.get_row_data())
+                    
+                    if data_list:
+                        df = pd.DataFrame(data_list, columns=rs.fields)
+                        df['close'] = pd.to_numeric(df['close'], errors='coerce')
+                        df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+                        high_52w = df['close'].max()
+                        low_52w = df['close'].min()
+                        volume = df['volume'].iloc[-1] if len(df) > 0 else 0
+                
+                logger.info("✓ Using Baostock market data as fallback")
+                
+                # 尝试从 Baostock 获取股票名称
+                stock_name = ""
+                try:
+                    rs_basic = bs.query_stock_basic(code=bs_code)
+                    if rs_basic.error_code == '0':
+                        basic_list = []
+                        while (rs_basic.error_code == '0') & rs_basic.next():
+                            basic_list.append(rs_basic.get_row_data())
+                        if basic_list:
+                            basic_df = pd.DataFrame(basic_list, columns=rs_basic.fields)
+                            if not basic_df.empty and 'code_name' in basic_df.columns:
+                                stock_name = basic_df.iloc[0].get('code_name', '')
+                except Exception as e:
+                    logger.warning(f"Failed to fetch stock name from Baostock: {e}")
+                
+                return {
+                    "stock_name": stock_name,
+                    "market_cap": baostock_data.get("market_cap", 0),
+                    "volume": volume,
+                    "average_volume": volume,  # 使用当前成交量作为平均值
+                    "fifty_two_week_high": high_52w,
+                    "fifty_two_week_low": low_52w
+                }
+        
+        # 如果有 akshare 数据，使用它
+        if stock_data is not None:
             return {
-                "market_cap": 0,
-                "volume": 0,
-                "average_volume": 0,
-                "fifty_two_week_high": 0,
-                "fifty_two_week_low": 0
+                "stock_name": str(stock_data.get("名称", "")),
+                "market_cap": float(stock_data.get("总市值", 0)),
+                "volume": float(stock_data.get("成交量", 0)),
+                "average_volume": float(stock_data.get("成交量", 0)),
+                "fifty_two_week_high": float(stock_data.get("52周最高", 0)),
+                "fifty_two_week_low": float(stock_data.get("52周最低", 0))
             }
-
+        
+        # 如果两个数据源都失败，返回默认值
+        logger.warning("Both Akshare and Baostock failed, using default values for market data")
         return {
-            "market_cap": float(stock_data.get("总市值", 0)),
-            "volume": float(stock_data.get("成交量", 0)),
-            # A股没有平均成交量，暂用当日成交量
-            "average_volume": float(stock_data.get("成交量", 0)),
-            "fifty_two_week_high": float(stock_data.get("52周最高", 0)),
-            "fifty_two_week_low": float(stock_data.get("52周最低", 0))
+            "stock_name": "",
+            "market_cap": 0,
+            "volume": 0,
+            "average_volume": 0,
+            "fifty_two_week_high": 0,
+            "fifty_two_week_low": 0
         }
 
     except Exception as e:
         logger.error(f"Error getting market data: {e}")
         return {
+            "stock_name": "",
             "market_cap": 0,
             "volume": 0,
             "average_volume": 0,

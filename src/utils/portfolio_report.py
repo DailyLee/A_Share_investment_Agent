@@ -111,7 +111,7 @@ def parse_agent_message_content(content: str, agent_name: str = "unknown") -> di
         return {"raw_content": content}
 
 
-def format_decision(action: str, quantity: int, confidence: float, agent_signals: list, reasoning: str, market_wide_news_summary: str = "未提供", raw_agent_data: dict = None) -> dict:
+def format_decision(action: str, quantity: int, confidence: float, agent_signals: list, reasoning: str, reasoning_zh: str = "", market_wide_news_summary: str = "未提供", raw_agent_data: dict = None) -> dict:
     """Format the trading decision into a standardized output format.
     Think in English but output analysis in Chinese."""
     
@@ -272,6 +272,11 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
 决策置信度: {confidence*100:.0f}%
 
 四、决策依据
+
+### 中文说明
+{reasoning_zh if reasoning_zh else '（未提供中文说明）'}
+
+### English Explanation
 {reasoning}
 
 ===================================="""
@@ -322,6 +327,7 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
         confidence = decision_json.get("confidence", 0.0)
         agent_signals = decision_json.get("agent_signals", [])
         reasoning = decision_json.get("reasoning", "")
+        reasoning_zh = decision_json.get("reasoning_zh", "")
         
         # 获取市场新闻摘要
         market_wide_news_summary = final_state.get("data", {}).get(
@@ -358,6 +364,7 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
             confidence=confidence,
             agent_signals=agent_signals,
             reasoning=reasoning,
+            reasoning_zh=reasoning_zh,
             market_wide_news_summary=market_wide_news_summary,
             raw_agent_data=raw_agent_data
         )
@@ -378,6 +385,7 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
         
         # 生成并保存 Markdown 文件
         ticker = final_state.get("data", {}).get("ticker", "UNKNOWN")
+        stock_name = final_state.get("data", {}).get("stock_name", "")
         current_date = datetime.now().strftime("%Y%m%d")
         report_filename = f"{ticker}_{current_date}.md"
         
@@ -445,12 +453,15 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
 {''.join(detailed_reasoning_parts)}
 """
         
+        # 构建股票名称行（如果有的话）
+        stock_name_line = f"- **股票名称**: {stock_name}\n" if stock_name else ""
+        
         markdown_content = f"""# 投资分析报告
 
 ## 基本信息
 
 - **股票代码**: {ticker}
-- **分析日期**: {datetime.now().strftime("%Y年%m月%d日")}
+{stock_name_line}- **分析日期**: {datetime.now().strftime("%Y年%m月%d日")}
 - **报告生成时间**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ---

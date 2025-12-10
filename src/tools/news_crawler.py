@@ -7,6 +7,31 @@ import pandas as pd
 from urllib.parse import urlparse
 from src.tools.openrouter_config import get_chat_completion, logger as api_logger
 
+# 导入新浪财经新闻模块 (主要数据源)
+try:
+    from src.tools.sina_news import (
+        get_sina_stock_news,
+        get_sina_market_news
+    )
+    SINA_AVAILABLE = True
+    print("✓ 新浪财经新闻模块已加载")
+except ImportError as e:
+    print(f"警告: 无法导入新浪财经新闻模块: {e}")
+    SINA_AVAILABLE = False
+
+# 导入东方财富新闻模块 (备用数据源)
+try:
+    from src.tools.eastmoney_news import (
+        get_eastmoney_stock_news,
+        get_eastmoney_index_news,
+        get_eastmoney_market_news
+    )
+    EASTMONEY_AVAILABLE = True
+    print("✓ 东方财富新闻模块已加载")
+except ImportError as e:
+    print(f"警告: 无法导入东方财富新闻模块: {e}")
+    EASTMONEY_AVAILABLE = False
+
 # 导入新的搜索模块
 try:
     from src.crawler.search import google_search_sync, SearchOptions
@@ -152,65 +177,92 @@ def get_stock_news_via_akshare(symbol: str, max_news: int = 10) -> list:
     if ak is None:
         return []
 
-    try:
-        # 获取新闻列表
-        news_df = ak.stock_news_em(symbol=symbol)
-        if news_df is None or len(news_df) == 0:
-            print(f"未获取到{symbol}的新闻数据")
-            return []
+    # 添加重试逻辑
+    max_retries = 3
+    retry_delay = 2  # 秒
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"尝试从 akshare 获取新闻 (尝试 {attempt + 1}/{max_retries})...")
+            
+            # 获取新闻列表
+            news_df = ak.stock_news_em(symbol=symbol)
+            
+            if news_df is None or len(news_df) == 0:
+                print(f"未获取到{symbol}的新闻数据")
+                if attempt < max_retries - 1:
+                    print(f"等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                    continue
+                return []
 
-        print(f"成功获取到{len(news_df)}条新闻")
+            print(f"成功获取到{len(news_df)}条新闻")
 
-        # 实际可获取的新闻数量
-        available_news_count = len(news_df)
-        if available_news_count < max_news:
-            print(f"警告：实际可获取的新闻数量({available_news_count})少于请求的数量({max_news})")
-            max_news = available_news_count
+            # 实际可获取的新闻数量
+            available_news_count = len(news_df)
+            if available_news_count < max_news:
+                print(f"警告：实际可获取的新闻数量({available_news_count})少于请求的数量({max_news})")
+                max_news = available_news_count
 
-        # 获取指定条数的新闻（考虑到可能有些新闻内容为空，多获取50%）
-        news_list = []
-        for _, row in news_df.head(int(max_news * 1.5)).iterrows():
-            try:
-                # 获取新闻内容
-                content = row["新闻内容"] if "新闻内容" in row and not pd.isna(
-                    row["新闻内容"]) else ""
-                if not content:
-                    content = row["新闻标题"]
+            # 获取指定条数的新闻（考虑到可能有些新闻内容为空，多获取50%）
+            news_list = []
+            for _, row in news_df.head(int(max_news * 1.5)).iterrows():
+                try:
+                    # 获取新闻内容
+                    content = row["新闻内容"] if "新闻内容" in row and not pd.isna(
+                        row["新闻内容"]) else ""
+                    if not content:
+                        content = row["新闻标题"]
 
-                # 只去除首尾空白字符
-                content = content.strip()
-                if len(content) < 10:  # 内容太短的跳过
+                    # 只去除首尾空白字符
+                    content = content.strip()
+                    if len(content) < 10:  # 内容太短的跳过
+                        continue
+
+                    # 获取关键词
+                    keyword = row["关键词"] if "关键词" in row and not pd.isna(
+                        row["关键词"]) else ""
+
+                    # 添加新闻
+                    news_item = {
+                        "title": row["新闻标题"].strip(),
+                        "content": content,
+                        "publish_time": row["发布时间"],
+                        "source": row["文章来源"].strip(),
+                        "url": row["新闻链接"].strip(),
+                        "keyword": keyword.strip()
+                    }
+                    news_list.append(news_item)
+                    print(f"成功添加新闻: {news_item['title']}")
+
+                except Exception as e:
+                    print(f"处理单条新闻时出错: {e}")
                     continue
 
-                # 获取关键词
-                keyword = row["关键词"] if "关键词" in row and not pd.isna(
-                    row["关键词"]) else ""
+            # 按发布时间排序
+            news_list.sort(key=lambda x: x["publish_time"], reverse=True)
 
-                # 添加新闻
-                news_item = {
-                    "title": row["新闻标题"].strip(),
-                    "content": content,
-                    "publish_time": row["发布时间"],
-                    "source": row["文章来源"].strip(),
-                    "url": row["新闻链接"].strip(),
-                    "keyword": keyword.strip()
-                }
-                news_list.append(news_item)
-                print(f"成功添加新闻: {news_item['title']}")
+            # 只保留指定条数的有效新闻
+            return news_list[:max_news]
 
-            except Exception as e:
-                print(f"处理单条新闻时出错: {e}")
+        except json.JSONDecodeError as e:
+            print(f"akshare 返回数据格式错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                print(f"等待 {retry_delay} 秒后重试...")
+                time.sleep(retry_delay)
                 continue
-
-        # 按发布时间排序
-        news_list.sort(key=lambda x: x["publish_time"], reverse=True)
-
-        # 只保留指定条数的有效新闻
-        return news_list[:max_news]
-
-    except Exception as e:
-        print(f"akshare 获取新闻数据时出错: {e}")
-        return []
+            print("所有重试均失败，返回空列表")
+            return []
+        except Exception as e:
+            print(f"akshare 获取新闻数据时出错 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                print(f"等待 {retry_delay} 秒后重试...")
+                time.sleep(retry_delay)
+                continue
+            print("所有重试均失败，返回空列表")
+            return []
+    
+    return []
 
 
 def get_stock_news(symbol: str, max_news: int = 10, date: str = None) -> list:
@@ -291,9 +343,35 @@ def get_stock_news(symbol: str, max_news: int = 10, date: str = None) -> list:
     need_more_news = max_news - len(cached_news)
     fetch_count = max(need_more_news, max_news)  # 至少获取请求的数量
 
-    # 优先尝试使用新的 Google 搜索方法
+    # 优先尝试使用新浪财经新闻 (主要数据源 - 最稳定)
     new_news_list = []
-    if google_search_sync and SearchOptions:
+    if SINA_AVAILABLE:
+        try:
+            print("使用新浪财经获取新闻...")
+            new_news_list = get_sina_stock_news(symbol, max_news=fetch_count)
+            
+            if new_news_list:
+                print(f"通过新浪财经成功获取到{len(new_news_list)}条新闻")
+            else:
+                print("新浪财经未返回有效结果，尝试其他方法")
+        except Exception as e:
+            print(f"新浪财经获取新闻时出错: {e}，尝试其他方法")
+    
+    # 如果新浪财经失败，尝试东方财富
+    if not new_news_list and EASTMONEY_AVAILABLE:
+        try:
+            print("使用东方财富网获取新闻...")
+            new_news_list = get_eastmoney_stock_news(symbol, max_news=fetch_count)
+            
+            if new_news_list:
+                print(f"通过东方财富网成功获取到{len(new_news_list)}条新闻")
+            else:
+                print("东方财富网未返回有效结果，尝试其他方法")
+        except Exception as e:
+            print(f"东方财富网获取新闻时出错: {e}，尝试其他方法")
+    
+    # 如果都失败，尝试 Google 搜索
+    if not new_news_list and google_search_sync and SearchOptions:
         try:
             print("使用 Google 搜索获取新闻...")
 

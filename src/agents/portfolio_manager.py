@@ -326,7 +326,8 @@ def portfolio_management_agent(state: AgentState):
                 - "risk_management"
                 - "selected_stock_macro_analysis" (representing the tool-based macro input from macro_analyst_agent)
                 - "market_wide_news_summary(沪深300指数)" (representing the daily news summary input from macro_news_agent - provide a brief signal like bullish/bearish/neutral for the news summary itself, or state if it was primarily factored into overall reasoning with confidence reflecting its impact)
-            - "reasoning": <concise explanation of the decision including how you weighted ALL signals, including both macro inputs>
+            - "reasoning": <concise explanation of the decision including how you weighted ALL signals, including both macro inputs (in English)>
+            - "reasoning_zh": <same explanation as 'reasoning' but translated into Chinese (中文)>
 
             Trading Rules:
             - Never exceed risk management position limits
@@ -397,7 +398,8 @@ def portfolio_management_agent(state: AgentState):
                 {"agent_name": "macro_news_agent",
                     "signal": "unavailable_or_llm_error", "confidence": 0.0}
             ],
-            "reasoning": "LLM API error. Defaulting to conservative hold based on risk management."
+            "reasoning": "LLM API error. Defaulting to conservative hold based on risk management.",
+            "reasoning_zh": "LLM API 错误。基于风险管理，默认采取保守的持有策略。"
         })
 
     final_decision_message = HumanMessage(

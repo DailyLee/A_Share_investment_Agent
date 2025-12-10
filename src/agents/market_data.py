@@ -78,6 +78,13 @@ def market_data_agent(state: AgentState):
     # 转换价格数据为字典格式
     prices_dict = prices_df.to_dict('records')
 
+    # 获取股票名称
+    stock_name = market_data.get("stock_name", "")
+    if stock_name:
+        logger.info(f"获取到股票名称: {stock_name}")
+    else:
+        logger.warning(f"无法获取 {ticker} 的股票名称")
+    
     # 获取 market_cap，优先使用 market_data，如果为0则尝试从 financial_metrics 获取
     market_cap = market_data.get("market_cap", 0)
     if market_cap <= 0 and financial_metrics and len(financial_metrics) > 0:
@@ -113,6 +120,7 @@ def market_data_agent(state: AgentState):
         "messages": messages,
         "data": {
             **data,
+            "stock_name": stock_name,
             "prices": prices_dict,
             "start_date": start_date,
             "end_date": end_date,

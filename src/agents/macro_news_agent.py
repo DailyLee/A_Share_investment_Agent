@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 import akshare as ak
+import pandas as pd
 from src.utils.logging_config import setup_logger
 # from langgraph.graph import AgentState # Changed import
 # Added for alignment
@@ -10,6 +11,20 @@ from typing import Dict, Any, List
 from src.utils.api_utils import agent_endpoint  # Added for alignment
 from src.tools.openrouter_config import get_chat_completion
 from langchain_core.messages import HumanMessage  # Added import
+
+# 导入新浪财经新闻模块 (主要)
+try:
+    from src.tools.sina_news import get_sina_market_news
+    SINA_AVAILABLE = True
+except ImportError:
+    SINA_AVAILABLE = False
+
+# 导入东方财富新闻模块 (备用)
+try:
+    from src.tools.eastmoney_news import get_eastmoney_index_news, get_eastmoney_market_news
+    EASTMONEY_AVAILABLE = True
+except ImportError:
+    EASTMONEY_AVAILABLE = False
 
 # LLM Prompt for analyzing full news data
 LLM_PROMPT_MACRO_ANALYSIS = """你是一名资深的A股市场宏观分析师。请根据以下提供的沪深300指数（代码：000300）当日的**全部新闻数据**，进行深入分析并生成一份专业的宏观总结报告。
@@ -74,17 +89,135 @@ def macro_news_agent(state: AgentState) -> Dict[str, Any]:
 
     if not from_cache:
         show_workflow_status(f"{agent_name}: 缓存中未找到今日总结或缓存无效，开始获取实时新闻。")
-        try:
-            show_workflow_status(
-                f"{agent_name}: Fetching news for symbol {symbol}")
-            news_df = ak.stock_news_em(symbol=symbol)
-            if news_df is None or news_df.empty:
-                message = f"未获取到 {symbol} 的新闻数据。"
-                show_workflow_status(f"{agent_name}: {message}")
-                show_agent_reasoning(
-                    f"No news found for {symbol}. Proceeding with no data summary.", agent_name)
-                summary = "今日未获取到相关宏观新闻数据。"
+        
+        # 优先使用新浪财经新闻 (最稳定)
+        if SINA_AVAILABLE:
+            try:
+                show_workflow_status(f"{agent_name}: 使用新浪财经获取市场要闻...")
+                news_list_raw = get_sina_market_news(max_news=100)
+                
+                if news_list_raw:
+                    # 转换为 DataFrame 格式以兼容现有代码
+                    news_df = pd.DataFrame(news_list_raw)
+                    # 重命名列以匹配 akshare 格式
+                    if 'title' in news_df.columns:
+                        news_df.rename(columns={
+                            'title': '新闻标题',
+                            'content': '新闻内容',
+                            'publish_time': '发布时间'
+                        }, inplace=True)
+                    
+                    retrieved_news_count = len(news_df)
+                    message = f"成功从新浪财经获取到 {retrieved_news_count} 条市场要闻。"
+                    show_workflow_status(f"{agent_name}: {message}")
+                    show_agent_reasoning(
+                        f"Successfully fetched {retrieved_news_count} news items from Sina Finance. Preparing for LLM analysis.", agent_name)
+                    
+                    # 跳过其他数据源
+                    goto_llm_analysis = True
+                else:
+                    show_workflow_status(f"{agent_name}: 新浪财经未返回数据，尝试其他数据源...")
+                    goto_llm_analysis = False
+                    
+            except Exception as e:
+                show_workflow_status(f"{agent_name}: 新浪财经获取失败: {e}，尝试其他数据源...")
+                goto_llm_analysis = False
+        else:
+            goto_llm_analysis = False
+        
+        # 如果新浪财经失败，尝试东方财富
+        if not goto_llm_analysis and EASTMONEY_AVAILABLE:
+            try:
+                show_workflow_status(f"{agent_name}: 使用东方财富网获取沪深300新闻...")
+                news_list_raw = get_eastmoney_index_news(symbol, max_news=100)
+                
+                if news_list_raw:
+                    # 转换为 DataFrame 格式以兼容现有代码
+                    news_df = pd.DataFrame(news_list_raw)
+                    # 重命名列以匹配 akshare 格式
+                    if 'title' in news_df.columns:
+                        news_df.rename(columns={
+                            'title': '新闻标题',
+                            'content': '新闻内容',
+                            'publish_time': '发布时间'
+                        }, inplace=True)
+                    
+                    retrieved_news_count = len(news_df)
+                    message = f"成功从东方财富网获取到 {symbol} 的 {retrieved_news_count} 条新闻数据。"
+                    show_workflow_status(f"{agent_name}: {message}")
+                    show_agent_reasoning(
+                        f"Successfully fetched {retrieved_news_count} news items from Eastmoney for {symbol}. Preparing for LLM analysis.", agent_name)
+                    
+                    # 跳过 akshare 重试逻辑
+                    goto_llm_analysis = True
+                else:
+                    show_workflow_status(f"{agent_name}: 东方财富网未返回数据，尝试 Akshare...")
+                    goto_llm_analysis = False
+                    
+            except Exception as e:
+                show_workflow_status(f"{agent_name}: 东方财富网获取失败: {e}，尝试 Akshare...")
+                goto_llm_analysis = False
+        
+        # 如果东方财富失败，使用 akshare 重试逻辑
+        if not goto_llm_analysis:
+            # 添加重试逻辑
+            max_retries = 3
+            retry_delay = 2
+            news_df = None
+            
+            for attempt in range(max_retries):
+                try:
+                    show_workflow_status(
+                        f"{agent_name}: Fetching news for symbol {symbol} (尝试 {attempt + 1}/{max_retries})")
+                    news_df = ak.stock_news_em(symbol=symbol)
+                
+                    if news_df is None or news_df.empty:
+                        if attempt < max_retries - 1:
+                            show_workflow_status(f"{agent_name}: 未获取到数据，{retry_delay}秒后重试...")
+                            import time
+                            time.sleep(retry_delay)
+                            continue
+                        else:
+                            message = f"未获取到 {symbol} 的新闻数据（已重试{max_retries}次）。"
+                            show_workflow_status(f"{agent_name}: {message}")
+                            show_agent_reasoning(
+                                f"No news found for {symbol} after {max_retries} retries. Proceeding with no data summary.", agent_name)
+                            summary = "今日未获取到相关宏观新闻数据（API可能暂时不可用）。"
+                            break
+                    else:
+                        # 成功获取数据，退出重试循环
+                        break
+                        
+                except json.JSONDecodeError as e:
+                    error_msg = f"数据格式错误 (尝试 {attempt + 1}/{max_retries}): {e}"
+                    show_workflow_status(f"{agent_name}: {error_msg}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        summary = f"宏观新闻分析过程中发生错误: {str(e)}"
+                        break
+                except Exception as e:
+                    error_msg = f"获取新闻时出错 (尝试 {attempt + 1}/{max_retries}): {e}"
+                    show_workflow_status(f"{agent_name}: {error_msg}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        summary = f"宏观新闻分析过程中发生错误: {str(e)}"
+                        break
+        
+            # 处理成功获取到的新闻数据
+            if news_df is not None and not news_df.empty:
+                goto_llm_analysis = True
             else:
+                goto_llm_analysis = False
+        
+        # 处理新闻数据并调用 LLM 分析
+        if goto_llm_analysis and news_df is not None and not news_df.empty:
+            try:
                 retrieved_news_count = len(news_df)
                 message = f"成功获取到 {symbol} 的 {retrieved_news_count} 条新闻数据。"
                 show_workflow_status(f"{agent_name}: {message}")
@@ -112,13 +245,13 @@ def macro_news_agent(state: AgentState) -> Dict[str, Any]:
                 show_workflow_status(f"{agent_name}: LLM宏观分析结果获取成功.")
                 show_agent_reasoning(
                     f"LLM analysis complete. Summary (first 100 chars): {summary[:100]}...", agent_name)
-
-        except Exception as e:
-            error_message = f"{agent_name}: 执行出错: {e}"
-            show_workflow_status(error_message)
-            show_agent_reasoning(
-                f"Exception during execution: {str(e)}", agent_name)
-            summary = f"宏观新闻分析过程中发生错误: {str(e)}"
+                    
+            except Exception as e:
+                error_message = f"{agent_name}: 处理新闻数据时出错: {e}"
+                show_workflow_status(error_message)
+                show_agent_reasoning(
+                    f"Exception during news processing: {str(e)}", agent_name)
+                summary = f"宏观新闻分析过程中发生错误: {str(e)}"
 
     # 保存总结到JSON文件 (only if not from cache and successful, or if updating existing)
     if not from_cache:  # Also save if summary was updated, even if initially from cache but e.g. re-analyzed
