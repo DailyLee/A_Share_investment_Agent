@@ -219,8 +219,17 @@ def portfolio_management_agent(state: AgentState):
         cleaned_messages_for_processing, "fundamentals_agent")
     sentiment_message = get_latest_message_by_name(
         cleaned_messages_for_processing, "sentiment_agent")
-    valuation_message = get_latest_message_by_name(
-        cleaned_messages_for_processing, "valuation_agent")
+    # 优先查找 valuation_agent_v2，如果不存在则回退到 valuation_agent
+    # 检查消息列表中是否存在对应的agent消息
+    valuation_message = None
+    for msg in cleaned_messages_for_processing:
+        if msg.name == "valuation_agent_v2":
+            valuation_message = msg
+            break
+    if not valuation_message:
+        # 如果没找到 valuation_agent_v2，尝试 valuation_agent
+        valuation_message = get_latest_message_by_name(
+            cleaned_messages_for_processing, "valuation_agent")
     risk_message = get_latest_message_by_name(
         cleaned_messages_for_processing, "risk_management_agent")
     tool_based_macro_message = get_latest_message_by_name(
@@ -295,23 +304,28 @@ def portfolio_management_agent(state: AgentState):
             - You MUST follow the trading_action (buy/sell/hold) recommended by risk management
             - These are hard constraints that cannot be overridden by other signals
 
-            When weighing the different signals for direction and timing:
-            1. Valuation Analysis (30% weight)
-            2. Fundamental Analysis (25% weight)
-            3. Technical Analysis (20% weight)
-            4. Macro Analysis (15% weight) - This encompasses TWO inputs:
+            When weighing the different signals for direction and timing (adjusted for A-share market characteristics):
+            1. Macro Analysis (25% weight) - This encompasses TWO inputs:
                a) General Macro Environment (from Macro Analyst Agent, tool-based)
                b) Daily Market-Wide News Summary (from Macro News Agent)
                Both provide context for external risks and opportunities.
-            5. Sentiment Analysis (10% weight)
+               NOTE: A-share market is highly policy-driven, so macro analysis has the highest weight.
+            2. Technical Analysis (25% weight)
+               NOTE: A-share market is dominated by retail investors, making technical patterns more effective.
+            3. Fundamental Analysis (20% weight)
+               NOTE: Fundamentals provide important insights into company quality, profitability, growth, and financial health.
+            4. Valuation Analysis (15% weight)
+               NOTE: Valuation models have limitations in A-share market due to high volatility, policy influence, and model assumptions. Lower weight reflects these limitations.
+            5. Sentiment Analysis (15% weight)
+               NOTE: Market sentiment and fund flows significantly impact A-share market due to retail investor dominance.
 
-            The decision process should be:
+            The decision process should be (prioritized for A-share market):
             1. First check risk management constraints
-            2. Then evaluate valuation signal
-            3. Then evaluate fundamentals signal
-            4. Consider BOTH the General Macro Environment AND the Daily Market-Wide News Summary.
-            5. Use technical analysis for timing
-            6. Consider sentiment for final adjustment
+            2. Evaluate BOTH the General Macro Environment AND the Daily Market-Wide News Summary (highest priority - policy-driven market)
+            3. Use technical analysis for entry/exit timing (high priority - retail investor behavior)
+            4. Evaluate fundamentals signal (company quality, profitability, growth, financial health)
+            5. Consider sentiment for market mood and fund flow assessment (moderate priority)
+            6. Finally evaluate valuation signal (reference only, as models have limitations)
 
             Provide the following in your output JSON:
             - "action": "buy" | "sell" | "hold",

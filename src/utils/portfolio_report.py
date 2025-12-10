@@ -204,6 +204,40 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
         if signal_data.get("signal") == "bearish":
             return "看空"
         return "中性"
+    
+    def parse_confidence(confidence_value):
+        """解析置信度值，支持字符串和数字格式"""
+        if confidence_value is None:
+            return 0.0
+        if isinstance(confidence_value, str):
+            cleaned = confidence_value.strip().replace('%', '')
+            try:
+                value = float(cleaned)
+                return value if value <= 1.0 else value / 100.0
+            except ValueError:
+                return 0.0
+        if isinstance(confidence_value, (int, float)):
+            return float(confidence_value) if confidence_value <= 1.0 else confidence_value / 100.0
+        return 0.0
+    
+    def get_valuation_details(valuation_signal):
+        """根据估值方法类型返回相应的估值详情"""
+        if not valuation_signal:
+            return "   - 估值数据不可用"
+        
+        reasoning = valuation_signal.get('reasoning', {})
+        valuation_method = reasoning.get('valuation_method', '')
+        
+        # 检查是否为基于营收的估值（成长型公司）
+        if 'Revenue-Based' in valuation_method or reasoning.get('company_type', '').startswith('Growth'):
+            revenue_analysis = reasoning.get('revenue_based_analysis', {})
+            details = revenue_analysis.get('details', '无数据')
+            return f"   - 营收估值法（成长型公司）: {details}"
+        
+        # 标准估值方法（DCF + 所有者收益法）
+        dcf_details = reasoning.get('dcf_analysis', {}).get('details', '无数据')
+        oe_details = reasoning.get('owner_earnings_analysis', {}).get('details', '无数据')
+        return f"   - DCF估值: {dcf_details}\n   - 所有者收益法: {oe_details}"
 
     detailed_analysis = f"""
 ====================================
@@ -212,23 +246,9 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
 
 一、策略分析
 
-1. 基本面分析 (权重30%):
-   信号: {signal_to_chinese(fundamental_signal)}
-   置信度: {((fundamental_signal or {}).get('confidence', 0.0) * 100):.0f}%
-   要点:
-   - 盈利能力: {(fundamental_signal or {}).get('reasoning', {}).get('profitability_signal', {}).get('details', '无数据')}
-   - 增长情况: {(fundamental_signal or {}).get('reasoning', {}).get('growth_signal', {}).get('details', '无数据')}
-   - 财务健康: {(fundamental_signal or {}).get('reasoning', {}).get('financial_health_signal', {}).get('details', '无数据')}
-   - 估值水平: {(fundamental_signal or {}).get('reasoning', {}).get('price_ratios_signal', {}).get('details', '无数据')}
+【权重说明（根据A股市场特点调整）：技术25% + 基本面20% + 估值15% + 宏观25% + 情绪15% = 100%】
 
-2. 估值分析 (权重35%):
-   信号: {signal_to_chinese(valuation_signal)}
-   置信度: {((valuation_signal or {}).get('confidence', 0.0) * 100):.0f}%
-   要点:
-   - DCF估值: {(valuation_signal or {}).get('reasoning', {}).get('dcf_analysis', {}).get('details', '无数据')}
-   - 所有者收益法: {(valuation_signal or {}).get('reasoning', {}).get('owner_earnings_analysis', {}).get('details', '无数据')}
-
-3. 技术分析 (权重25%):
+1. 技术分析 (权重25%):
    信号: {signal_to_chinese(technical_signal)}
    置信度: {((technical_signal or {}).get('confidence', 0.0) * 100):.0f}%
    要点:
@@ -240,7 +260,22 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
      * 6月动量={((technical_signal or {}).get('strategy_signals', {}).get('momentum', {}).get('metrics', {}).get('momentum_6m', 0.0)):.2%}
    - 波动性: {((technical_signal or {}).get('strategy_signals', {}).get('volatility', {}).get('metrics', {}).get('historical_volatility', 0.0)):.2%}
 
-4. 宏观分析 (综合权重15%):
+2. 基本面分析 (权重20%):
+   信号: {signal_to_chinese(fundamental_signal)}
+   置信度: {((fundamental_signal or {}).get('confidence', 0.0) * 100):.0f}%
+   要点:
+   - 盈利能力: {(fundamental_signal or {}).get('reasoning', {}).get('profitability_signal', {}).get('details', '无数据')}
+   - 增长情况: {(fundamental_signal or {}).get('reasoning', {}).get('growth_signal', {}).get('details', '无数据')}
+   - 财务健康: {(fundamental_signal or {}).get('reasoning', {}).get('financial_health_signal', {}).get('details', '无数据')}
+   - 估值水平: {(fundamental_signal or {}).get('reasoning', {}).get('price_ratios_signal', {}).get('details', '无数据')}
+
+3. 估值分析 (权重15%):
+   信号: {signal_to_chinese(valuation_signal)}
+   置信度: {parse_confidence((valuation_signal or {}).get('confidence', 0.0)):.0f}%
+   要点:
+   {get_valuation_details(valuation_signal)}
+
+4. 宏观分析 (综合权重25%):
    a) 常规宏观分析 (来自 Macro Analyst Agent):
       信号: {signal_to_chinese(general_macro_signal)}
       置信度: {((general_macro_signal or {}).get('confidence', 0.0) * 100):.0f}%
@@ -253,7 +288,7 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
       置信度: {((market_wide_news_signal or {}).get('confidence', 0.0) * 100):.0f}%
       摘要或结论: {(market_wide_news_signal or {}).get('reasoning', market_wide_news_summary)}
 
-5. 情绪分析 (权重10%):
+5. 情绪分析 (权重15%):
    信号: {signal_to_chinese(sentiment_signal)}
    置信度: {((sentiment_signal or {}).get('confidence', 0.0) * 100):.0f}%
    分析: {(sentiment_signal or {}).get('reasoning', '无详细分析')}
@@ -343,6 +378,7 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
             "fundamentals_agent": "fundamentals",
             "sentiment_agent": "sentiment",
             "valuation_agent": "valuation",
+            "valuation_agent_v2": "valuation",  # 支持V2版本的估值代理
             "risk_management_agent": "risk",
             "macro_analyst_agent": "macro_analyst",
         }
@@ -414,6 +450,7 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
                 "fundamentals_agent": "基本面分析师",
                 "sentiment_agent": "情绪分析师",
                 "valuation_agent": "估值分析师",
+                "valuation_agent_v2": "估值分析师（V2）",  # 支持V2版本的估值代理
                 "risk_management_agent": "风险管理专家",
                 "macro_analyst_agent": "宏观分析师",
                 "macro_news_agent": "宏观新闻分析师",

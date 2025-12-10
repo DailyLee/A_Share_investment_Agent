@@ -35,90 +35,209 @@ def technical_analyst_agent(state: AgentState):
     prices = data["prices"]
     prices_df = prices_to_df(prices)
 
+    # 检查价格数据是否为空
+    if prices_df is None or prices_df.empty or len(prices_df) < 2:
+        logger.warning("价格数据为空或不足，返回默认中性信号")
+        default_analysis = {
+            "signal": "neutral",
+            "confidence": "0%",
+            "strategy_signals": {
+                "trend_following": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "mean_reversion": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "momentum": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "volatility": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "statistical_arbitrage": {"signal": "neutral", "confidence": "0%", "metrics": {}}
+            }
+        }
+        message = HumanMessage(
+            content=json.dumps(default_analysis),
+            name="technical_analyst_agent",
+        )
+        if show_reasoning:
+            show_agent_reasoning(default_analysis, "Technical Analyst")
+            state["metadata"]["agent_reasoning"] = default_analysis
+        show_workflow_status("Technical Analyst", "completed")
+        return {
+            "messages": [message],
+            "data": data,
+            "metadata": state["metadata"],
+        }
+
     # Initialize confidence variable
     confidence = 0.0
 
     # Calculate indicators
     # 1. MACD (Moving Average Convergence Divergence)
-    macd_line, signal_line = calculate_macd(prices_df)
+    try:
+        macd_line, signal_line = calculate_macd(prices_df)
+    except Exception as e:
+        logger.error(f"计算MACD指标时出错: {e}")
+        # 返回默认中性信号
+        default_analysis = {
+            "signal": "neutral",
+            "confidence": "0%",
+            "strategy_signals": {
+                "trend_following": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "mean_reversion": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "momentum": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "volatility": {"signal": "neutral", "confidence": "0%", "metrics": {}},
+                "statistical_arbitrage": {"signal": "neutral", "confidence": "0%", "metrics": {}}
+            }
+        }
+        message = HumanMessage(
+            content=json.dumps(default_analysis),
+            name="technical_analyst_agent",
+        )
+        if show_reasoning:
+            show_agent_reasoning(default_analysis, "Technical Analyst")
+            state["metadata"]["agent_reasoning"] = default_analysis
+        show_workflow_status("Technical Analyst", "completed")
+        return {
+            "messages": [message],
+            "data": data,
+            "metadata": state["metadata"],
+        }
 
     # 2. RSI (Relative Strength Index)
-    rsi = calculate_rsi(prices_df)
+    try:
+        rsi = calculate_rsi(prices_df)
+    except Exception as e:
+        logger.error(f"计算RSI指标时出错: {e}")
+        rsi = pd.Series([50.0] * len(prices_df))  # 默认中性值
 
     # 3. Bollinger Bands (Bollinger Bands)
-    upper_band, lower_band = calculate_bollinger_bands(prices_df)
+    try:
+        upper_band, lower_band = calculate_bollinger_bands(prices_df)
+    except Exception as e:
+        logger.error(f"计算布林带指标时出错: {e}")
+        current_price = prices_df['close'].iloc[-1] if len(prices_df) > 0 else 0
+        upper_band = pd.Series([current_price * 1.1] * len(prices_df))
+        lower_band = pd.Series([current_price * 0.9] * len(prices_df))
 
     # 4. OBV (On-Balance Volume)
-    obv = calculate_obv(prices_df)
+    try:
+        obv = calculate_obv(prices_df)
+    except Exception as e:
+        logger.error(f"计算OBV指标时出错: {e}")
+        obv = pd.Series([0.0] * len(prices_df))
 
     # Generate individual signals
     signals = []
 
-    # MACD signal
-    if macd_line.iloc[-2] < signal_line.iloc[-2] and macd_line.iloc[-1] > signal_line.iloc[-1]:
-        signals.append('bullish')
-    elif macd_line.iloc[-2] > signal_line.iloc[-2] and macd_line.iloc[-1] < signal_line.iloc[-1]:
-        signals.append('bearish')
-    else:
+    # 检查数据长度是否足够
+    if len(macd_line) < 2 or len(signal_line) < 2:
+        logger.warning("MACD数据不足，使用默认中性信号")
         signals.append('neutral')
+    else:
+        # MACD signal
+        try:
+            if macd_line.iloc[-2] < signal_line.iloc[-2] and macd_line.iloc[-1] > signal_line.iloc[-1]:
+                signals.append('bullish')
+            elif macd_line.iloc[-2] > signal_line.iloc[-2] and macd_line.iloc[-1] < signal_line.iloc[-1]:
+                signals.append('bearish')
+            else:
+                signals.append('neutral')
+        except (IndexError, KeyError) as e:
+            logger.warning(f"MACD信号计算错误: {e}，使用中性信号")
+            signals.append('neutral')
 
     # RSI signal
-    if rsi.iloc[-1] < 30:
-        signals.append('bullish')
-    elif rsi.iloc[-1] > 70:
-        signals.append('bearish')
-    else:
+    try:
+        if len(rsi) > 0 and rsi.iloc[-1] < 30:
+            signals.append('bullish')
+        elif len(rsi) > 0 and rsi.iloc[-1] > 70:
+            signals.append('bearish')
+        else:
+            signals.append('neutral')
+    except (IndexError, KeyError) as e:
+        logger.warning(f"RSI信号计算错误: {e}，使用中性信号")
         signals.append('neutral')
 
     # Bollinger Bands signal
-    current_price = prices_df['close'].iloc[-1]
-    if current_price < lower_band.iloc[-1]:
-        signals.append('bullish')
-    elif current_price > upper_band.iloc[-1]:
-        signals.append('bearish')
-    else:
+    try:
+        if len(prices_df) > 0 and len(lower_band) > 0 and len(upper_band) > 0:
+            current_price = prices_df['close'].iloc[-1]
+            if current_price < lower_band.iloc[-1]:
+                signals.append('bullish')
+            elif current_price > upper_band.iloc[-1]:
+                signals.append('bearish')
+            else:
+                signals.append('neutral')
+        else:
+            signals.append('neutral')
+    except (IndexError, KeyError) as e:
+        logger.warning(f"布林带信号计算错误: {e}，使用中性信号")
         signals.append('neutral')
 
     # OBV signal
-    obv_slope = obv.diff().iloc[-5:].mean()
-    if obv_slope > 0:
-        signals.append('bullish')
-    elif obv_slope < 0:
-        signals.append('bearish')
-    else:
+    try:
+        if len(obv) >= 5:
+            obv_slope = obv.diff().iloc[-5:].mean()
+            if obv_slope > 0:
+                signals.append('bullish')
+            elif obv_slope < 0:
+                signals.append('bearish')
+            else:
+                signals.append('neutral')
+        else:
+            signals.append('neutral')
+    except (IndexError, KeyError) as e:
+        logger.warning(f"OBV信号计算错误: {e}，使用中性信号")
         signals.append('neutral')
 
     # Calculate price drop
-    price_drop = (prices_df['close'].iloc[-1] -
-                  prices_df['close'].iloc[-5]) / prices_df['close'].iloc[-5]
+    try:
+        if len(prices_df) >= 5:
+            price_drop = (prices_df['close'].iloc[-1] -
+                          prices_df['close'].iloc[-5]) / prices_df['close'].iloc[-5]
+        else:
+            price_drop = 0
+    except (IndexError, KeyError) as e:
+        logger.warning(f"价格变化计算错误: {e}")
+        price_drop = 0
 
     # Add price drop signal
-    if price_drop < -0.05 and rsi.iloc[-1] < 40:  # 5% drop and RSI below 40
-        signals.append('bullish')
-        confidence += 0.2  # Increase confidence for oversold conditions
-    elif price_drop < -0.03 and rsi.iloc[-1] < 45:  # 3% drop and RSI below 45
-        signals.append('bullish')
-        confidence += 0.1
+    try:
+        if len(rsi) > 0:
+            if price_drop < -0.05 and rsi.iloc[-1] < 40:  # 5% drop and RSI below 40
+                signals.append('bullish')
+                confidence += 0.2  # Increase confidence for oversold conditions
+            elif price_drop < -0.03 and rsi.iloc[-1] < 45:  # 3% drop and RSI below 45
+                signals.append('bullish')
+                confidence += 0.1
+    except (IndexError, KeyError) as e:
+        logger.warning(f"价格下跌信号计算错误: {e}")
 
     # Add reasoning collection
-    reasoning = {
-        "MACD": {
-            "signal": signals[0],
-            "details": f"MACD Line crossed {'above' if signals[0] == 'bullish' else 'below' if signals[0] == 'bearish' else 'neither above nor below'} Signal Line"
-        },
-        "RSI": {
-            "signal": signals[1],
-            "details": f"RSI is {rsi.iloc[-1]:.2f} ({'oversold' if signals[1] == 'bullish' else 'overbought' if signals[1] == 'bearish' else 'neutral'})"
-        },
-        "Bollinger": {
-            "signal": signals[2],
-            "details": f"Price is {'below lower band' if signals[2] == 'bullish' else 'above upper band' if signals[2] == 'bearish' else 'within bands'}"
-        },
-        "OBV": {
-            "signal": signals[3],
-            "details": f"OBV slope is {obv_slope:.2f} ({signals[3]})"
+    try:
+        obv_slope = obv.diff().iloc[-5:].mean() if len(obv) >= 5 else 0
+        rsi_value = rsi.iloc[-1] if len(rsi) > 0 else 50.0
+        reasoning = {
+            "MACD": {
+                "signal": signals[0] if len(signals) > 0 else "neutral",
+                "details": f"MACD Line crossed {'above' if signals[0] == 'bullish' else 'below' if signals[0] == 'bearish' else 'neither above nor below'} Signal Line" if len(signals) > 0 else "MACD data unavailable"
+            },
+            "RSI": {
+                "signal": signals[1] if len(signals) > 1 else "neutral",
+                "details": f"RSI is {rsi_value:.2f} ({'oversold' if len(signals) > 1 and signals[1] == 'bullish' else 'overbought' if len(signals) > 1 and signals[1] == 'bearish' else 'neutral'})"
+            },
+            "Bollinger": {
+                "signal": signals[2] if len(signals) > 2 else "neutral",
+                "details": f"Price is {'below lower band' if len(signals) > 2 and signals[2] == 'bullish' else 'above upper band' if len(signals) > 2 and signals[2] == 'bearish' else 'within bands'}"
+            },
+            "OBV": {
+                "signal": signals[3] if len(signals) > 3 else "neutral",
+                "details": f"OBV slope is {obv_slope:.2f} ({signals[3] if len(signals) > 3 else 'neutral'})"
+            }
         }
-    }
+    except Exception as e:
+        logger.error(f"构建推理信息时出错: {e}")
+        reasoning = {
+            "MACD": {"signal": "neutral", "details": "Data unavailable"},
+            "RSI": {"signal": "neutral", "details": "Data unavailable"},
+            "Bollinger": {"signal": "neutral", "details": "Data unavailable"},
+            "OBV": {"signal": "neutral", "details": "Data unavailable"}
+        }
 
     # Determine overall signal
     bullish_signals = signals.count('bullish')
@@ -148,19 +267,39 @@ def technical_analyst_agent(state: AgentState):
     }
 
     # 1. Trend Following Strategy
-    trend_signals = calculate_trend_signals(prices_df)
+    try:
+        trend_signals = calculate_trend_signals(prices_df)
+    except Exception as e:
+        logger.error(f"计算趋势信号时出错: {e}")
+        trend_signals = {"signal": "neutral", "confidence": 0.0, "metrics": {}}
 
     # 2. Mean Reversion Strategy
-    mean_reversion_signals = calculate_mean_reversion_signals(prices_df)
+    try:
+        mean_reversion_signals = calculate_mean_reversion_signals(prices_df)
+    except Exception as e:
+        logger.error(f"计算均值回归信号时出错: {e}")
+        mean_reversion_signals = {"signal": "neutral", "confidence": 0.0, "metrics": {}}
 
     # 3. Momentum Strategy
-    momentum_signals = calculate_momentum_signals(prices_df)
+    try:
+        momentum_signals = calculate_momentum_signals(prices_df)
+    except Exception as e:
+        logger.error(f"计算动量信号时出错: {e}")
+        momentum_signals = {"signal": "neutral", "confidence": 0.0, "metrics": {}}
 
     # 4. Volatility Strategy
-    volatility_signals = calculate_volatility_signals(prices_df)
+    try:
+        volatility_signals = calculate_volatility_signals(prices_df)
+    except Exception as e:
+        logger.error(f"计算波动率信号时出错: {e}")
+        volatility_signals = {"signal": "neutral", "confidence": 0.0, "metrics": {}}
 
     # 5. Statistical Arbitrage Signals
-    stat_arb_signals = calculate_stat_arb_signals(prices_df)
+    try:
+        stat_arb_signals = calculate_stat_arb_signals(prices_df)
+    except Exception as e:
+        logger.error(f"计算统计套利信号时出错: {e}")
+        stat_arb_signals = {"signal": "neutral", "confidence": 0.0, "metrics": {}}
 
     # Combine all signals using a weighted ensemble approach
     strategy_weights = {

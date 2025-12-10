@@ -1,4 +1,5 @@
 import math
+import logging
 
 from langchain_core.messages import HumanMessage
 
@@ -8,6 +9,8 @@ from src.utils.api_utils import agent_endpoint, log_llm_interaction
 
 import json
 import ast
+
+logger = logging.getLogger(__name__)
 
 ##### Risk Management Agent #####
 
@@ -23,31 +26,94 @@ def risk_management_agent(state: AgentState):
     prices_df = prices_to_df(data["prices"])
 
     # Fetch debate room message instead of individual analyst messages
-    debate_message = next(
-        msg for msg in state["messages"] if msg.name == "debate_room_agent")
-
     try:
-        debate_results = json.loads(debate_message.content)
+        debate_message = next(
+            msg for msg in state["messages"] if msg.name == "debate_room_agent")
+    except StopIteration:
+        logger.warning("⚠️ 缺少 debate_room_agent 消息，使用默认值")
+        debate_message = None
+
+    # Parse debate results with fallback
+    if debate_message:
+        try:
+            debate_results = json.loads(debate_message.content)
+        except Exception as e:
+            try:
+                debate_results = ast.literal_eval(debate_message.content)
+            except Exception as e2:
+                logger.warning(f"⚠️ 无法解析 debate_room_agent 消息: {e2}，使用默认值")
+                debate_results = {
+                    "bull_confidence": 0.0,
+                    "bear_confidence": 0.0,
+                    "confidence": 0.0,
+                    "signal": "neutral"
+                }
+    else:
+        debate_results = {
+            "bull_confidence": 0.0,
+            "bear_confidence": 0.0,
+            "confidence": 0.0,
+            "signal": "neutral"
+        }
+
+    # 1. Calculate Risk Metrics with error handling
+    try:
+        if prices_df is None or prices_df.empty or len(prices_df) < 2:
+            logger.warning("⚠️ 价格数据为空或不足，使用默认风险指标")
+            volatility = 0.0
+            var_95 = 0.0
+            max_drawdown = 0.0
+            volatility_percentile = 0.0
+        else:
+            returns = prices_df['close'].pct_change().dropna()
+            if len(returns) == 0:
+                volatility = 0.0
+                var_95 = 0.0
+                volatility_percentile = 0.0
+            else:
+                daily_vol = returns.std()
+                # Annualized volatility approximation
+                volatility = daily_vol * (252 ** 0.5) if not math.isnan(daily_vol) else 0.0
+
+                # 计算波动率的历史分布
+                try:
+                    rolling_std = returns.rolling(window=min(120, len(returns))).std() * (252 ** 0.5)
+                    volatility_mean = rolling_std.mean()
+                    volatility_std = rolling_std.std()
+                    if not math.isnan(volatility_mean) and not math.isnan(volatility_std) and volatility_std > 0:
+                        volatility_percentile = (volatility - volatility_mean) / volatility_std
+                    else:
+                        volatility_percentile = 0.0
+                except Exception as e:
+                    logger.warning(f"⚠️ 计算波动率百分位数失败: {e}，使用默认值")
+                    volatility_percentile = 0.0
+
+                # Simple historical VaR at 95% confidence
+                var_95 = returns.quantile(0.05) if len(returns) > 0 else 0.0
+                if math.isnan(var_95):
+                    var_95 = 0.0
+
+            # 使用60天窗口计算最大回撤
+            try:
+                if len(prices_df) >= 60:
+                    max_drawdown = (
+                        prices_df['close'] / prices_df['close'].rolling(window=60).max() - 1).min()
+                elif len(prices_df) >= 2:
+                    max_drawdown = (
+                        prices_df['close'] / prices_df['close'].rolling(window=len(prices_df)).max() - 1).min()
+                else:
+                    max_drawdown = 0.0
+                if math.isnan(max_drawdown):
+                    max_drawdown = 0.0
+            except Exception as e:
+                logger.warning(f"⚠️ 计算最大回撤失败: {e}，使用默认值")
+                max_drawdown = 0.0
     except Exception as e:
-        debate_results = ast.literal_eval(debate_message.content)
-
-    # 1. Calculate Risk Metrics
-    returns = prices_df['close'].pct_change().dropna()
-    daily_vol = returns.std()
-    # Annualized volatility approximation
-    volatility = daily_vol * (252 ** 0.5)
-
-    # 计算波动率的历史分布
-    rolling_std = returns.rolling(window=120).std() * (252 ** 0.5)
-    volatility_mean = rolling_std.mean()
-    volatility_std = rolling_std.std()
-    volatility_percentile = (volatility - volatility_mean) / volatility_std
-
-    # Simple historical VaR at 95% confidence
-    var_95 = returns.quantile(0.05)
-    # 使用60天窗口计算最大回撤
-    max_drawdown = (
-        prices_df['close'] / prices_df['close'].rolling(window=60).max() - 1).min()
+        logger.error(f"⚠️ 计算风险指标时发生错误: {e}，使用默认值")
+        volatility = 0.0
+        var_95 = 0.0
+        max_drawdown = 0.0
+        volatility_percentile = 0.0
 
     # 2. Market Risk Assessment
     market_risk_score = 0
@@ -73,7 +139,15 @@ def risk_management_agent(state: AgentState):
 
     # 3. Position Size Limits
     # Consider total portfolio value, not just cash
-    current_stock_value = portfolio['stock'] * prices_df['close'].iloc[-1]
+    try:
+        if prices_df is not None and not prices_df.empty and len(prices_df) > 0:
+            current_stock_value = portfolio['stock'] * prices_df['close'].iloc[-1]
+        else:
+            current_stock_value = 0.0
+    except Exception as e:
+        logger.warning(f"⚠️ 计算当前股票价值失败: {e}，使用默认值")
+        current_stock_value = 0.0
+    
     total_portfolio_value = portfolio['cash'] + current_stock_value
 
     # Start with 25% max position of total portfolio
@@ -110,23 +184,33 @@ def risk_management_agent(state: AgentState):
 
     # 5. Risk-Adjusted Signal Analysis
     # Consider debate room confidence levels
-    bull_confidence = debate_results["bull_confidence"]
-    bear_confidence = debate_results["bear_confidence"]
-    debate_confidence = debate_results["confidence"]
+    try:
+        bull_confidence = debate_results.get("bull_confidence", 0.0)
+        bear_confidence = debate_results.get("bear_confidence", 0.0)
+        debate_confidence = debate_results.get("confidence", 0.0)
+        debate_signal = debate_results.get("signal", "neutral")
+    except Exception as e:
+        logger.warning(f"⚠️ 获取辩论结果失败: {e}，使用默认值")
+        bull_confidence = 0.0
+        bear_confidence = 0.0
+        debate_confidence = 0.0
+        debate_signal = "neutral"
 
     # Add to risk score if confidence is low or debate was close
-    confidence_diff = abs(bull_confidence - bear_confidence)
-    if confidence_diff < 0.1:  # Close debate
-        market_risk_score += 1
-    if debate_confidence < 0.3:  # Low overall confidence
-        market_risk_score += 1
+    try:
+        confidence_diff = abs(bull_confidence - bear_confidence)
+        if confidence_diff < 0.1:  # Close debate
+            market_risk_score += 1
+        if debate_confidence < 0.3:  # Low overall confidence
+            market_risk_score += 1
+    except Exception as e:
+        logger.warning(f"⚠️ 计算风险评分调整失败: {e}")
 
     # Cap risk score at 10
     risk_score = min(round(market_risk_score), 10)
 
     # 6. Generate Trading Action
     # Consider debate room signal along with risk assessment
-    debate_signal = debate_results["signal"]
 
     if risk_score >= 9:
         trading_action = "hold"

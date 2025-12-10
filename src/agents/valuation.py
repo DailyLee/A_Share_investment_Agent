@@ -2,6 +2,7 @@ from langchain_core.messages import HumanMessage
 from src.utils.logging_config import setup_logger
 from src.agents.state import AgentState, show_agent_reasoning, show_workflow_status
 from src.utils.api_utils import agent_endpoint, log_llm_interaction
+from src.config.industry_valuation_params import get_valuation_params, get_industry_description
 import json
 
 # 初始化 logger
@@ -17,9 +18,31 @@ def valuation_agent(state: AgentState):
     metrics = data["financial_metrics"][0]
     current_financial_line_item = data["financial_line_items"][0]
     previous_financial_line_item = data["financial_line_items"][1]
-    market_cap = data["market_cap"]
+    
+    # 市值单位是亿元，需要转换为元以匹配财务数据
+    market_cap_yi = data["market_cap"]  # 原始市值（亿元）
+    market_cap = market_cap_yi * 100_000_000  # 转换为元
 
-    reasoning = {}
+    # 获取行业信息和对应的估值参数
+    industry_name = data.get("industry", "")
+    valuation_params = get_valuation_params(industry_name)
+    industry_code = valuation_params["industry_code"]
+    industry_desc = get_industry_description(industry_code)
+    
+    logger.info(f"股票行业: {industry_name}")
+    logger.info(f"行业分类: {industry_desc}")
+    logger.info(f"使用估值参数: {valuation_params}")
+
+    reasoning = {
+        "industry_info": {
+            "industry_name": industry_name,
+            "industry_classification": industry_desc,
+            "params_applied": {
+                "owner_earnings": valuation_params["owner_earnings"],
+                "dcf": valuation_params["dcf"]
+            }
+        }
+    }
 
     # Get earnings growth rate with fallback to default value
     earnings_growth = metrics.get("earnings_growth", 0.05)  # Default 5% if not available
@@ -32,7 +55,8 @@ def valuation_agent(state: AgentState):
     working_capital_change = (current_financial_line_item.get(
         'working_capital') or 0) - (previous_financial_line_item.get('working_capital') or 0)
 
-    # Owner Earnings Valuation (Buffett Method)
+    # Owner Earnings Valuation (Buffett Method) - 使用行业特定参数
+    oe_params = valuation_params["owner_earnings"]
     owner_earnings_value = calculate_owner_earnings_value(
         net_income=current_financial_line_item.get('net_income'),
         depreciation=current_financial_line_item.get(
@@ -40,16 +64,23 @@ def valuation_agent(state: AgentState):
         capex=current_financial_line_item.get('capital_expenditure'),
         working_capital_change=working_capital_change,
         growth_rate=earnings_growth,
-        required_return=0.15,
-        margin_of_safety=0.25
+        required_return=oe_params["required_return"],
+        margin_of_safety=oe_params["margin_of_safety"],
+        terminal_growth_factor=oe_params["terminal_growth_factor"],
+        terminal_growth_cap=oe_params["terminal_growth_cap"],
+        use_maintenance_capex=oe_params["use_maintenance_capex"],
+        maintenance_capex_ratio=oe_params["maintenance_capex_ratio"],
+        use_declining_growth=oe_params["use_declining_growth"]
     )
 
-    # DCF Valuation
+    # DCF Valuation - 使用行业特定参数
+    dcf_params = valuation_params["dcf"]
     dcf_value = calculate_intrinsic_value(
         free_cash_flow=current_financial_line_item.get('free_cash_flow'),
         growth_rate=earnings_growth,
-        discount_rate=0.10,
-        terminal_growth_rate=0.03,
+        discount_rate=dcf_params["discount_rate"],
+        terminal_growth_factor=dcf_params["terminal_growth_factor"],
+        terminal_growth_cap=dcf_params["terminal_growth_cap"],
         num_years=5,
     )
 
@@ -83,14 +114,19 @@ def valuation_agent(state: AgentState):
         else:
             signal = 'neutral'
 
+        # 转换为亿元以便于阅读（除以1亿）
+        dcf_value_yi = dcf_value / 100_000_000
+        owner_earnings_value_yi = owner_earnings_value / 100_000_000
+        market_cap_yi_display = market_cap / 100_000_000
+
         reasoning["dcf_analysis"] = {
             "signal": "bullish" if dcf_gap > 0.10 else "bearish" if dcf_gap < -0.20 else "neutral",
-            "details": f"Intrinsic Value: ${dcf_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {dcf_gap:.1%}"
+            "details": f"Intrinsic Value: ¥{dcf_value_yi:,.2f}亿, Market Cap: ¥{market_cap_yi_display:,.2f}亿, Gap: {dcf_gap:.1%}"
         }
 
         reasoning["owner_earnings_analysis"] = {
             "signal": "bullish" if owner_earnings_gap > 0.10 else "bearish" if owner_earnings_gap < -0.20 else "neutral",
-            "details": f"Owner Earnings Value: ${owner_earnings_value:,.2f}, Market Cap: ${market_cap:,.2f}, Gap: {owner_earnings_gap:.1%}"
+            "details": f"Owner Earnings Value: ¥{owner_earnings_value_yi:,.2f}亿, Market Cap: ¥{market_cap_yi_display:,.2f}亿, Gap: {owner_earnings_gap:.1%}"
         }
 
     message_content = {
@@ -130,9 +166,12 @@ def calculate_owner_earnings_value(
     growth_rate: float = 0.05,
     required_return: float = 0.15,
     margin_of_safety: float = 0.25,
-    num_years: int = 5
-
-
+    num_years: int = 5,
+    terminal_growth_factor: float = 0.4,
+    terminal_growth_cap: float = 0.03,
+    use_maintenance_capex: bool = False,
+    maintenance_capex_ratio: float = 0.5,
+    use_declining_growth: bool = True
 ) -> float:
     """
     使用改进的所有者收益法计算公司价值。
@@ -146,6 +185,11 @@ def calculate_owner_earnings_value(
         required_return: 要求回报率
         margin_of_safety: 安全边际
         num_years: 预测年数
+        terminal_growth_factor: 永续增长率系数（永续增长率 = growth_rate * factor）
+        terminal_growth_cap: 永续增长率上限
+        use_maintenance_capex: 是否只扣除维持性资本支出
+        maintenance_capex_ratio: 维持性资本支出占总资本支出的比例
+        use_declining_growth: 是否使用递减增长率模型（稳定行业应设为False）
 
     Returns:
         float: 计算得到的公司价值
@@ -155,11 +199,14 @@ def calculate_owner_earnings_value(
         if not all(isinstance(x, (int, float)) for x in [net_income, depreciation, capex, working_capital_change]):
             return 0
 
+        # 根据参数决定是否只扣除维持性资本支出
+        effective_capex = capex * maintenance_capex_ratio if use_maintenance_capex else capex
+        
         # 计算初始所有者收益
         owner_earnings = (
             net_income +
             depreciation -
-            capex -
+            effective_capex -
             working_capital_change
         )
 
@@ -172,14 +219,19 @@ def calculate_owner_earnings_value(
         # 计算预测期收益现值
         future_values = []
         for year in range(1, num_years + 1):
-            # 使用递减增长率模型
-            year_growth = growth_rate * (1 - year / (2 * num_years))  # 增长率逐年递减
+            if use_declining_growth:
+                # 使用递减增长率模型（适合周期性行业）
+                year_growth = growth_rate * (1 - year / (2 * num_years))
+            else:
+                # 使用恒定增长率模型（适合稳定行业）
+                year_growth = growth_rate
+            
             future_value = owner_earnings * (1 + year_growth) ** year
             discounted_value = future_value / (1 + required_return) ** year
             future_values.append(discounted_value)
 
-        # 计算永续价值
-        terminal_growth = min(growth_rate * 0.4, 0.03)  # 永续增长率取增长率的40%或3%的较小值
+        # 计算永续价值 - 使用传入的参数
+        terminal_growth = min(growth_rate * terminal_growth_factor, terminal_growth_cap)
         terminal_value = (
             future_values[-1] * (1 + terminal_growth)) / (required_return - terminal_growth)
         terminal_value_discounted = terminal_value / \
@@ -200,8 +252,9 @@ def calculate_intrinsic_value(
     free_cash_flow: float,
     growth_rate: float = 0.05,
     discount_rate: float = 0.10,
-    terminal_growth_rate: float = 0.02,
     num_years: int = 5,
+    terminal_growth_factor: float = 0.4,
+    terminal_growth_cap: float = 0.03
 ) -> float:
     """
     使用改进的DCF方法计算内在价值，考虑增长率和风险因素。
@@ -210,8 +263,9 @@ def calculate_intrinsic_value(
         free_cash_flow: 自由现金流
         growth_rate: 预期增长率
         discount_rate: 基础折现率
-        terminal_growth_rate: 永续增长率
         num_years: 预测年数
+        terminal_growth_factor: 永续增长率系数（永续增长率 = growth_rate * factor）
+        terminal_growth_cap: 永续增长率上限
 
     Returns:
         float: 计算得到的内在价值
@@ -223,8 +277,8 @@ def calculate_intrinsic_value(
         # 调整增长率，确保合理性
         growth_rate = min(max(growth_rate, 0), 0.25)  # 限制在0-25%之间
 
-        # 调整永续增长率，不能超过经济平均增长
-        terminal_growth_rate = min(growth_rate * 0.4, 0.03)  # 取增长率的40%或3%的较小值
+        # 调整永续增长率，使用传入的参数
+        terminal_growth_rate = min(growth_rate * terminal_growth_factor, terminal_growth_cap)
 
         # 计算预测期现金流现值
         present_values = []

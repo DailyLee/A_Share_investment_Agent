@@ -114,71 +114,90 @@ def get_market_data_from_baostock(symbol: str) -> Dict[str, Any]:
         # 尝试多种方式获取市值
         market_cap = 0
         
-        # 方法1: 从 query_stock_basic 获取流通股数
+        # 方法1: 从 query_profit_data 获取总股本（最可靠的方法）
         try:
-            rs_basic = bs.query_stock_basic(code=bs_code)
-            if rs_basic.error_code == '0':
-                basic_list = []
-                while (rs_basic.error_code == '0') & rs_basic.next():
-                    basic_list.append(rs_basic.get_row_data())
-                if basic_list:
-                    basic_df = pd.DataFrame(basic_list, columns=rs_basic.fields)
-                    if not basic_df.empty and 'tradableShare' in basic_df.columns:
-                        # 流通股数（单位可能是股或万股，需要测试）
-                        float_shares_str = basic_df.iloc[0].get('tradableShare', '0')
-                        if float_shares_str and float_shares_str != '':
-                            float_shares = float(float_shares_str)
-                            # 尝试计算：假设单位是万股
-                            market_cap = float_shares * close_price / 10000  # 转换为亿元
-                            logger.info(f"Method 1: 流通股={float_shares}万股, 收盘价={close_price}, 市值={market_cap}亿元")
+            current_year = datetime.now().year
+            current_quarter = (datetime.now().month - 1) // 3 + 1
+            
+            # 尝试最近2个季度
+            for quarter_offset in range(0, 2):
+                year = current_year
+                quarter = current_quarter - quarter_offset
+                if quarter <= 0:
+                    year -= 1
+                    quarter += 4
+                
+                rs_profit = bs.query_profit_data(code=bs_code, year=year, quarter=quarter)
+                if rs_profit.error_code == '0':
+                    profit_list = []
+                    while (rs_profit.error_code == '0') & rs_profit.next():
+                        profit_list.append(rs_profit.get_row_data())
+                    
+                    if profit_list:
+                        profit_df = pd.DataFrame(profit_list, columns=rs_profit.fields)
+                        if not profit_df.empty:
+                            # 尝试获取 totalShare（总股本）
+                            total_share_str = profit_df.iloc[0].get('totalShare', '0')
+                            if total_share_str and total_share_str != '':
+                                try:
+                                    total_shares = float(total_share_str)  # 单位：股
+                                    # 市值 = 总股本（股） * 股价（元） / 1亿 = 亿元
+                                    market_cap = total_shares * close_price / 100_000_000
+                                    logger.info(f"Method 1: 总股本={total_shares:,.0f}股 ({total_shares/100_000_000:.2f}亿股), 收盘价={close_price}元, 市值={market_cap:.2f}亿元")
+                                    break
+                                except (ValueError, TypeError) as e:
+                                    logger.warning(f"Failed to parse totalShare: {e}")
+                
+                if market_cap > 0:
+                    break
         except Exception as e:
             logger.warning(f"Method 1 failed: {e}")
         
-        # 方法2: 如果方法1失败或结果不合理，尝试从盈利数据估算
-        if market_cap <= 0 or market_cap > 100000:  # 市值不合理（小于0或大于10万亿）
+        # 方法2: 如果方法1失败，尝试使用流通股本作为后备
+        if market_cap <= 0:
             try:
-                # 从 query_profit_data 获取每股收益
                 current_year = datetime.now().year
                 current_quarter = (datetime.now().month - 1) // 3 + 1
                 
-                # 尝试最近几个季度
-                for year_offset in range(0, 2):
-                    for quarter_offset in range(0, 4):
-                        year = current_year - year_offset
-                        quarter = current_quarter - quarter_offset
-                        if quarter <= 0:
-                            year -= 1
-                            quarter += 4
+                # 尝试更多历史季度（最近4个季度）
+                for quarter_offset in range(2, 6):  # 从第3个季度开始（方法1已经试过前2个）
+                    year = current_year
+                    quarter = current_quarter - quarter_offset
+                    if quarter <= 0:
+                        year -= 1
+                        quarter += 4
+                    
+                    rs_profit = bs.query_profit_data(code=bs_code, year=year, quarter=quarter)
+                    if rs_profit.error_code == '0':
+                        profit_list = []
+                        while (rs_profit.error_code == '0') & rs_profit.next():
+                            profit_list.append(rs_profit.get_row_data())
                         
-                        rs_profit = bs.query_profit_data(
-                            code=bs_code,
-                            year=year,
-                            quarter=quarter
-                        )
-                        
-                        if rs_profit.error_code == '0':
-                            profit_list = []
-                            while (rs_profit.error_code == '0') & rs_profit.next():
-                                profit_list.append(rs_profit.get_row_data())
-                            
-                            if profit_list:
-                                profit_df = pd.DataFrame(profit_list, columns=rs_profit.fields)
-                                if not profit_df.empty and 'epsTTM' in profit_df.columns:
-                                    eps_ttm_str = profit_df.iloc[0].get('epsTTM', '0')
-                                    if eps_ttm_str and eps_ttm_str != '' and pe_ratio > 0:
-                                        eps_ttm = float(eps_ttm_str)
-                                        # 市值 = 总股本 * 股价 = (总利润 / EPS) * 股价 = 总利润 * PE
-                                        # 但我们只能估算：市值 = 股价 / EPS * 总利润
-                                        # 简化：如果有PE，市值 ≈ 某个基准值
-                                        # 实际上从PE和股价可以推算总股本
-                                        if eps_ttm != 0:
-                                            total_shares = close_price / eps_ttm  # 亿股
-                                            market_cap = total_shares * close_price  # 亿元
-                                            logger.info(f"Method 2: EPS={eps_ttm}, 收盘价={close_price}, 推算市值={market_cap}亿元")
+                        if profit_list:
+                            profit_df = pd.DataFrame(profit_list, columns=rs_profit.fields)
+                            if not profit_df.empty:
+                                # 尝试 totalShare
+                                total_share_str = profit_df.iloc[0].get('totalShare', '0')
+                                if total_share_str and total_share_str != '':
+                                    try:
+                                        total_shares = float(total_share_str)
+                                        market_cap = total_shares * close_price / 100_000_000
+                                        logger.info(f"Method 2: 总股本={total_shares:,.0f}股 ({total_shares/100_000_000:.2f}亿股), 收盘价={close_price}元, 市值={market_cap:.2f}亿元 (历史数据: {year}Q{quarter})")
+                                        break
+                                    except (ValueError, TypeError) as e:
+                                        logger.warning(f"Failed to parse totalShare: {e}")
+                                
+                                # 后备方案：使用流通股本 liqaShare
+                                if market_cap <= 0:
+                                    liqa_share_str = profit_df.iloc[0].get('liqaShare', '0')
+                                    if liqa_share_str and liqa_share_str != '':
+                                        try:
+                                            liqa_shares = float(liqa_share_str)
+                                            market_cap = liqa_shares * close_price / 100_000_000
+                                            logger.info(f"Method 2 (liqaShare): 流通股本={liqa_shares:,.0f}股 ({liqa_shares/100_000_000:.2f}亿股), 收盘价={close_price}元, 流通市值={market_cap:.2f}亿元 (历史数据: {year}Q{quarter})")
                                             break
-                        
-                        if market_cap > 0:
-                            break
+                                        except (ValueError, TypeError) as e:
+                                            logger.warning(f"Failed to parse liqaShare: {e}")
                     
                     if market_cap > 0:
                         break
@@ -465,32 +484,67 @@ def get_financial_statements(symbol: str) -> Dict[str, Any]:
         line_items = []
         try:
             # 处理最新期间数据
+            net_income = float(latest_income.get("净利润", 0))
+            operating_revenue = float(latest_income.get("营业总收入", 0))
+            operating_cash_flow = float(latest_cash_flow.get("经营活动产生的现金流量净额", 0))
+            
+            # 尝试获取折旧数据
+            depreciation = float(latest_cash_flow.get("固定资产折旧、油气资产折耗、生产性生物资产折旧", 0))
+            
+            # 如果折旧数据缺失，使用估算值
+            if depreciation == 0 and net_income > 0:
+                # 方法1：使用经营现金流与净利润的差额作为粗略估计
+                # （假设主要差异来自折旧等非现金项目）
+                if operating_cash_flow > net_income:
+                    estimated_depreciation = (operating_cash_flow - net_income) * 0.6  # 保守估计60%来自折旧
+                    depreciation = max(estimated_depreciation, operating_revenue * 0.03)  # 至少为营收的3%
+                    logger.warning(f"折旧数据缺失，使用估算值: {depreciation/100000000:.2f}亿元")
+                else:
+                    # 后备方案：使用营业收入的3-5%作为折旧估算
+                    depreciation = operating_revenue * 0.04  # 保守使用4%
+                    logger.warning(f"折旧数据缺失且无法从现金流推算，使用营收4%作为估算: {depreciation/100000000:.2f}亿元")
+            
             current_item = {
                 # 从利润表获取
-                "net_income": float(latest_income.get("净利润", 0)),
-                "operating_revenue": float(latest_income.get("营业总收入", 0)),
+                "net_income": net_income,
+                "operating_revenue": operating_revenue,
                 "operating_profit": float(latest_income.get("营业利润", 0)),
 
                 # 从资产负债表计算营运资金
                 "working_capital": float(latest_balance.get("流动资产合计", 0)) - float(latest_balance.get("流动负债合计", 0)),
 
                 # 从现金流量表获取
-                "depreciation_and_amortization": float(latest_cash_flow.get("固定资产折旧、油气资产折耗、生产性生物资产折旧", 0)),
-                "capital_expenditure": abs(float(latest_cash_flow.get("购建固定资产、无形资产和其他长期资产支付的现金", 0))),
-                "free_cash_flow": float(latest_cash_flow.get("经营活动产生的现金流量净额", 0)) - abs(float(latest_cash_flow.get("购建固定资产、无形资产和其他长期资产支付的现金", 0)))
+                "depreciation_and_amortization": depreciation,
+                "capital_expenditure": abs(float(latest_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0))),
+                "free_cash_flow": operating_cash_flow - abs(float(latest_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0)))
             }
             line_items.append(current_item)
             logger.info("✓ Latest period data processed successfully")
 
             # 处理上一期间数据
+            prev_net_income = float(previous_income.get("净利润", 0))
+            prev_operating_revenue = float(previous_income.get("营业总收入", 0))
+            prev_operating_cash_flow = float(previous_cash_flow.get("经营活动产生的现金流量净额", 0))
+            
+            # 尝试获取折旧数据
+            prev_depreciation = float(previous_cash_flow.get("固定资产折旧、油气资产折耗、生产性生物资产折旧", 0))
+            
+            # 如果折旧数据缺失，使用估算值（与当期相同的逻辑）
+            if prev_depreciation == 0 and prev_net_income > 0:
+                if prev_operating_cash_flow > prev_net_income:
+                    estimated_prev_depreciation = (prev_operating_cash_flow - prev_net_income) * 0.6
+                    prev_depreciation = max(estimated_prev_depreciation, prev_operating_revenue * 0.03)
+                else:
+                    prev_depreciation = prev_operating_revenue * 0.04
+            
             previous_item = {
-                "net_income": float(previous_income.get("净利润", 0)),
-                "operating_revenue": float(previous_income.get("营业总收入", 0)),
+                "net_income": prev_net_income,
+                "operating_revenue": prev_operating_revenue,
                 "operating_profit": float(previous_income.get("营业利润", 0)),
                 "working_capital": float(previous_balance.get("流动资产合计", 0)) - float(previous_balance.get("流动负债合计", 0)),
-                "depreciation_and_amortization": float(previous_cash_flow.get("固定资产折旧、油气资产折耗、生产性生物资产折旧", 0)),
-                "capital_expenditure": abs(float(previous_cash_flow.get("购建固定资产、无形资产和其他长期资产支付的现金", 0))),
-                "free_cash_flow": float(previous_cash_flow.get("经营活动产生的现金流量净额", 0)) - abs(float(previous_cash_flow.get("购建固定资产、无形资产和其他长期资产支付的现金", 0)))
+                "depreciation_and_amortization": prev_depreciation,
+                "capital_expenditure": abs(float(previous_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0))),
+                "free_cash_flow": prev_operating_cash_flow - abs(float(previous_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0)))
             }
             line_items.append(previous_item)
             logger.info("✓ Previous period data processed successfully")
@@ -524,9 +578,63 @@ def get_financial_statements(symbol: str) -> Dict[str, Any]:
         return [default_item, default_item]
 
 
+def get_stock_industry(symbol: str) -> str:
+    """获取股票所属行业信息
+    
+    Args:
+        symbol: 股票代码
+        
+    Returns:
+        str: 行业名称，如果获取失败返回空字符串
+    """
+    try:
+        # 方法1: 尝试从东方财富获取行业信息
+        try:
+            stock_info = ak.stock_individual_info_em(symbol=symbol)
+            if stock_info is not None and not stock_info.empty:
+                # 查找行业信息
+                industry_row = stock_info[stock_info['item'] == '行业']
+                if not industry_row.empty:
+                    industry = str(industry_row['value'].iloc[0])
+                    logger.info(f"✓ Industry info fetched from Akshare: {industry}")
+                    return industry
+        except Exception as e:
+            logger.debug(f"Failed to get industry from Akshare: {e}")
+        
+        # 方法2: 尝试从Baostock获取行业信息
+        try:
+            if ensure_baostock_login():
+                bs_code = convert_stock_code_to_baostock(symbol)
+                rs = bs.query_stock_industry(code=bs_code)
+                
+                if rs.error_code == '0':
+                    industry_list = []
+                    while (rs.error_code == '0') & rs.next():
+                        industry_list.append(rs.get_row_data())
+                    
+                    if industry_list:
+                        industry_df = pd.DataFrame(industry_list, columns=rs.fields)
+                        if not industry_df.empty and 'industry' in industry_df.columns:
+                            industry = str(industry_df.iloc[0]['industry'])
+                            logger.info(f"✓ Industry info fetched from Baostock: {industry}")
+                            return industry
+        except Exception as e:
+            logger.debug(f"Failed to get industry from Baostock: {e}")
+        
+        logger.warning(f"Could not fetch industry information for {symbol}")
+        return ""
+        
+    except Exception as e:
+        logger.error(f"Error getting stock industry: {e}")
+        return ""
+
+
 def get_market_data(symbol: str) -> Dict[str, Any]:
     """获取市场数据"""
     try:
+        # 获取行业信息
+        industry = get_stock_industry(symbol)
+        
         # 获取实时行情
         stock_data = None
         try:
@@ -600,6 +708,7 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
                 
                 return {
                     "stock_name": stock_name,
+                    "industry": industry,
                     "market_cap": baostock_data.get("market_cap", 0),
                     "volume": volume,
                     "average_volume": volume,  # 使用当前成交量作为平均值
@@ -611,6 +720,7 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
         if stock_data is not None:
             return {
                 "stock_name": str(stock_data.get("名称", "")),
+                "industry": industry,
                 "market_cap": float(stock_data.get("总市值", 0)),
                 "volume": float(stock_data.get("成交量", 0)),
                 "average_volume": float(stock_data.get("成交量", 0)),
@@ -622,6 +732,7 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
         logger.warning("Both Akshare and Baostock failed, using default values for market data")
         return {
             "stock_name": "",
+            "industry": industry,
             "market_cap": 0,
             "volume": 0,
             "average_volume": 0,

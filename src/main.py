@@ -12,7 +12,7 @@ import pandas as pd
 import akshare as ak
 
 # --- Agent Imports ---
-from src.agents.valuation import valuation_agent
+from src.agents.valuation_v2 import valuation_agent_v2 as valuation_agent
 from src.agents.state import AgentState
 from src.agents.sentiment import sentiment_agent
 from src.agents.risk_manager import risk_management_agent
