@@ -16,6 +16,13 @@ from src.tools.api import prices_to_df
 # 初始化 logger
 logger = setup_logger('technical_analyst_agent')
 
+# A股市场常量
+A_SHARE_TRADING_DAYS_PER_YEAR = 240  # A股市场每年交易日约240-250天
+A_SHARE_LIMIT_UP_THRESHOLD = 0.099  # 涨停阈值（考虑浮点误差，使用9.9%）
+A_SHARE_LIMIT_DOWN_THRESHOLD = -0.099  # 跌停阈值
+A_SHARE_ST_LIMIT_UP_THRESHOLD = 0.049  # ST股票涨停阈值（5%）
+A_SHARE_ST_LIMIT_DOWN_THRESHOLD = -0.049  # ST股票跌停阈值
+
 
 ##### Technical Analyst #####
 @agent_endpoint("technical_analyst", "技术分析师，提供基于价格走势、指标和技术模式的交易信号")
@@ -62,6 +69,20 @@ def technical_analyst_agent(state: AgentState):
             "data": data,
             "metadata": state["metadata"],
         }
+    
+    # 检测和处理停牌数据（A股市场特点）
+    # 停牌特征：成交量接近0或为0，价格可能保持不变
+    if 'volume' in prices_df.columns:
+        recent_volumes = prices_df['volume'].iloc[-5:] if len(prices_df) >= 5 else prices_df['volume']
+        avg_recent_volume = recent_volumes.mean()
+        # 如果最近5天平均成交量小于历史平均的1%，可能是停牌
+        if len(prices_df) > 20:
+            historical_avg_volume = prices_df['volume'].iloc[:-5].mean() if len(prices_df) > 5 else prices_df['volume'].mean()
+            if historical_avg_volume > 0 and avg_recent_volume / historical_avg_volume < 0.01:
+                logger.warning("检测到可能的停牌情况（成交量异常低），技术分析结果可能不准确")
+        # 如果当前成交量为0，肯定是停牌
+        if len(prices_df) > 0 and prices_df['volume'].iloc[-1] == 0:
+            logger.warning("检测到停牌（成交量为0），技术分析结果可能不准确")
 
     # Initialize confidence variable
     confidence = 0.0
@@ -141,11 +162,11 @@ def technical_analyst_agent(state: AgentState):
             logger.warning(f"MACD信号计算错误: {e}，使用中性信号")
             signals.append('neutral')
 
-    # RSI signal
+    # RSI signal - 针对A股市场调整阈值（A股波动性更大，使用35/65而不是30/70）
     try:
-        if len(rsi) > 0 and rsi.iloc[-1] < 30:
+        if len(rsi) > 0 and rsi.iloc[-1] < 35:  # A股市场：超卖阈值从30调整为35
             signals.append('bullish')
-        elif len(rsi) > 0 and rsi.iloc[-1] > 70:
+        elif len(rsi) > 0 and rsi.iloc[-1] > 65:  # A股市场：超买阈值从70调整为65
             signals.append('bearish')
         else:
             signals.append('neutral')
@@ -196,15 +217,36 @@ def technical_analyst_agent(state: AgentState):
         logger.warning(f"价格变化计算错误: {e}")
         price_drop = 0
 
-    # Add price drop signal
+    # Add price drop signal - 考虑A股涨跌停板限制
     try:
-        if len(rsi) > 0:
-            if price_drop < -0.05 and rsi.iloc[-1] < 40:  # 5% drop and RSI below 40
-                signals.append('bullish')
-                confidence += 0.2  # Increase confidence for oversold conditions
-            elif price_drop < -0.03 and rsi.iloc[-1] < 45:  # 3% drop and RSI below 45
-                signals.append('bullish')
-                confidence += 0.1
+        if len(rsi) > 0 and len(prices_df) > 0:
+            # 检查是否为涨跌停板（A股±10%，ST股票±5%）
+            current_pct_change = prices_df.get('pct_change', pd.Series([0] * len(prices_df)))
+            if len(current_pct_change) > 0:
+                last_pct_change = current_pct_change.iloc[-1] if hasattr(current_pct_change, 'iloc') else 0
+                is_limit_up = (last_pct_change >= A_SHARE_LIMIT_UP_THRESHOLD) or (last_pct_change >= A_SHARE_ST_LIMIT_UP_THRESHOLD)
+                is_limit_down = (last_pct_change <= A_SHARE_LIMIT_DOWN_THRESHOLD) or (last_pct_change <= A_SHARE_ST_LIMIT_DOWN_THRESHOLD)
+                
+                # 如果涨停，降低看涨信号权重（涨停后可能回调）
+                if is_limit_up:
+                    logger.info("检测到涨停板，调整信号权重")
+                    # 涨停时，如果RSI已经很高，可能是超买信号
+                    if rsi.iloc[-1] > 70:
+                        signals.append('bearish')
+                        confidence += 0.15
+                # 如果跌停，可能是超卖机会
+                elif is_limit_down:
+                    logger.info("检测到跌停板，可能是超卖机会")
+                    if rsi.iloc[-1] < 40:
+                        signals.append('bullish')
+                        confidence += 0.25  # 跌停+低RSI，较强的超卖信号
+                # 正常情况下的价格下跌信号
+                elif price_drop < -0.05 and rsi.iloc[-1] < 40:  # 5% drop and RSI below 40
+                    signals.append('bullish')
+                    confidence += 0.2
+                elif price_drop < -0.03 and rsi.iloc[-1] < 45:  # 3% drop and RSI below 45
+                    signals.append('bullish')
+                    confidence += 0.1
     except (IndexError, KeyError) as e:
         logger.warning(f"价格下跌信号计算错误: {e}")
 
@@ -302,12 +344,13 @@ def technical_analyst_agent(state: AgentState):
         stat_arb_signals = {"signal": "neutral", "confidence": 0.0, "metrics": {}}
 
     # Combine all signals using a weighted ensemble approach
+    # 针对A股市场优化权重：A股散户主导，技术分析更有效，均值回归和动量策略权重较高
     strategy_weights = {
-        'trend': 0.30,
-        'mean_reversion': 0.25,  # Increased weight for mean reversion
-        'momentum': 0.25,
-        'volatility': 0.15,
-        'stat_arb': 0.05
+        'trend': 0.30,           # 趋势跟踪：A股市场趋势性较强
+        'mean_reversion': 0.30,   # 均值回归：A股市场波动大，均值回归机会多（从0.25提高到0.30）
+        'momentum': 0.25,        # 动量策略：保持原有权重
+        'volatility': 0.10,      # 波动率：降低权重（从0.15降到0.10），A股波动率信号相对不稳定
+        'stat_arb': 0.05         # 统计套利：保持低权重
     }
 
     combined_signal = weighted_signal_combination({
@@ -379,6 +422,18 @@ def calculate_trend_signals(prices_df):
     """
     Advanced trend following strategy using multiple timeframes and indicators
     """
+    # Check if we have enough data (need at least 55 periods for EMA55)
+    min_required = 55
+    if len(prices_df) < min_required:
+        return {
+            'signal': 'neutral',
+            'confidence': 0.0,
+            'metrics': {
+                'adx': 0.0,
+                'trend_strength': 0.0
+            }
+        }
+    
     # Calculate EMAs for multiple timeframes
     ema_8 = calculate_ema(prices_df, 8)
     ema_21 = calculate_ema(prices_df, 21)
@@ -393,16 +448,34 @@ def calculate_trend_signals(prices_df):
     # Determine trend direction and strength
     short_trend = ema_8 > ema_21
     medium_trend = ema_21 > ema_55
+    long_trend = ema_8 > ema_55  # 直接比较短期和长期EMA
 
     # Combine signals with confidence weighting
-    trend_strength = adx['adx'].iloc[-1] / 100.0
+    # Handle NaN values in ADX
+    adx_value = adx['adx'].iloc[-1]
+    if pd.isna(adx_value):
+        trend_strength = 0.0
+    else:
+        trend_strength = adx_value / 100.0
 
-    if short_trend.iloc[-1] and medium_trend.iloc[-1]:
+    # Improved trend detection: use multiple conditions with different confidence levels
+    short_bullish = short_trend.iloc[-1]
+    medium_bullish = medium_trend.iloc[-1]
+    long_bullish = long_trend.iloc[-1]
+    
+    # Count bullish conditions
+    bullish_count = sum([short_bullish, medium_bullish, long_bullish])
+    
+    if bullish_count >= 2:  # At least 2 out of 3 conditions are bullish
         signal = 'bullish'
-        confidence = trend_strength
-    elif not short_trend.iloc[-1] and not medium_trend.iloc[-1]:
+        # Confidence based on trend strength and number of conditions met
+        confidence = trend_strength * (0.6 + 0.2 * bullish_count)  # 0.6-1.0 multiplier
+        confidence = min(confidence, 1.0)
+    elif bullish_count <= 1:  # At most 1 condition is bullish (i.e., 2+ are bearish)
         signal = 'bearish'
-        confidence = trend_strength
+        bearish_count = 3 - bullish_count
+        confidence = trend_strength * (0.6 + 0.2 * bearish_count)
+        confidence = min(confidence, 1.0)
     else:
         signal = 'neutral'
         confidence = 0.5
@@ -421,43 +494,154 @@ def calculate_trend_signals(prices_df):
 def calculate_mean_reversion_signals(prices_df):
     """
     Mean reversion strategy using statistical measures and Bollinger Bands
+    针对A股市场优化：考虑涨跌停板、成交量异常等情况
     """
+    # Check if we have enough data (need at least 50 periods for MA50, but RSI can work with less)
+    min_required = 14  # Minimum for RSI
+    if len(prices_df) < min_required:
+        return {
+            'signal': 'neutral',
+            'confidence': 0.0,
+            'metrics': {
+                'z_score': 0.0,
+                'price_vs_bb': 0.5,
+                'rsi_14': 50.0,
+                'rsi_28': 50.0,
+                'volume_anomaly': False
+            }
+        }
+    
     # Calculate z-score of price relative to moving average
     ma_50 = prices_df['close'].rolling(window=50).mean()
     std_50 = prices_df['close'].rolling(window=50).std()
-    z_score = (prices_df['close'] - ma_50) / std_50
+    z_score = (prices_df['close'] - ma_50) / std_50.replace(0, np.nan)
 
-    # Calculate Bollinger Bands
-    bb_upper, bb_lower = calculate_bollinger_bands(prices_df)
+    # Calculate Bollinger Bands - A股市场可以使用稍大的标准差倍数
+    bb_upper, bb_lower = calculate_bollinger_bands(prices_df, window=20, num_std=2.2)
 
     # Calculate RSI with multiple timeframes
     rsi_14 = calculate_rsi(prices_df, 14)
     rsi_28 = calculate_rsi(prices_df, 28)
+    
+    # 检测成交量异常（A股市场成交量对技术分析很重要）
+    volume_ma_20 = prices_df['volume'].rolling(window=20, min_periods=10).mean()
+    volume_ratio = prices_df['volume'] / volume_ma_20.replace(0, np.nan)
+    volume_anomaly = False
+    current_volume_ratio = 1.0  # 默认值
+    if len(volume_ratio) > 0:
+        current_volume_ratio = volume_ratio.iloc[-1] if pd.notna(volume_ratio.iloc[-1]) else 1.0
+        # 异常放量：成交量是平均的2倍以上
+        # 异常缩量：成交量是平均的0.5倍以下
+        volume_anomaly = (pd.notna(current_volume_ratio) and 
+                         (current_volume_ratio > 2.0 or current_volume_ratio < 0.5))
+
+    # Safely extract RSI values FIRST, before using them in conditions
+    rsi_14_value = rsi_14.iloc[-1]
+    rsi_28_value = rsi_28.iloc[-1]
+    
+    # Convert to float, handling NaN values
+    rsi_14_float = float(rsi_14_value) if pd.notna(rsi_14_value) else 50.0
+    rsi_28_float = float(rsi_28_value) if pd.notna(rsi_28_value) else 50.0
 
     # Mean reversion signals
-    extreme_z_score = abs(z_score.iloc[-1]) > 2
-    price_vs_bb = (prices_df['close'].iloc[-1] - bb_lower.iloc[-1]
-                   ) / (bb_upper.iloc[-1] - bb_lower.iloc[-1])
+    # Handle NaN values in z_score
+    z_score_value = z_score.iloc[-1]
+    if pd.isna(z_score_value):
+        z_score_value = 0.0
+    
+    extreme_z_score = abs(z_score_value) > 2
+    
+    # Handle division by zero when Bollinger Bands width is 0
+    bb_range = bb_upper.iloc[-1] - bb_lower.iloc[-1]
+    if pd.isna(bb_range) or bb_range <= 0:
+        # When Bollinger Bands width is 0 or NaN, assume price is at middle (0.5)
+        price_vs_bb = 0.5
+    else:
+        price_vs_bb = (prices_df['close'].iloc[-1] - bb_lower.iloc[-1]) / bb_range
 
-    # Combine signals
-    if z_score.iloc[-1] < -2 and price_vs_bb < 0.2:
+    # Improved mean reversion signals with more practical thresholds for A-share market
+    # Use OR logic instead of AND to make signals more frequent
+    # Also incorporate RSI for confirmation and volume anomaly detection
+    
+    # 检查涨跌停板情况
+    current_pct_change = 0.0
+    is_limit_up = False
+    is_limit_down = False
+    if 'pct_change' in prices_df.columns and len(prices_df) > 0:
+        current_pct_change = prices_df['pct_change'].iloc[-1] if pd.notna(prices_df['pct_change'].iloc[-1]) else 0.0
+        is_limit_up = (current_pct_change >= A_SHARE_LIMIT_UP_THRESHOLD) or (current_pct_change >= A_SHARE_ST_LIMIT_UP_THRESHOLD)
+        is_limit_down = (current_pct_change <= A_SHARE_LIMIT_DOWN_THRESHOLD) or (current_pct_change <= A_SHARE_ST_LIMIT_DOWN_THRESHOLD)
+    
+    # Bullish conditions (oversold) - 针对A股市场优化
+    bullish_conditions = [
+        z_score_value < -1.5,  # Price significantly below MA50 (relaxed from -2)
+        price_vs_bb < 0.3,     # Price near lower Bollinger Band (relaxed from 0.2)
+        rsi_14_float < 35,     # RSI oversold (A股市场阈值从30调整为35)
+        is_limit_down          # 跌停板可能是超卖机会
+    ]
+    # 如果出现异常放量且价格下跌，可能是恐慌性抛售，也是买入机会
+    if volume_anomaly and current_volume_ratio > 2.0 and z_score_value < -1.0:
+        bullish_conditions.append(True)
+    bullish_count = sum(bullish_conditions)
+    
+    # Bearish conditions (overbought) - 针对A股市场优化
+    bearish_conditions = [
+        z_score_value > 1.5,   # Price significantly above MA50 (relaxed from 2)
+        price_vs_bb > 0.7,     # Price near upper Bollinger Band (relaxed from 0.8)
+        rsi_14_float > 65,     # RSI overbought (A股市场阈值从70调整为65)
+        is_limit_up            # 涨停板后可能回调
+    ]
+    # 如果出现异常放量且价格高位，可能是见顶信号
+    if volume_anomaly and current_volume_ratio > 2.0 and z_score_value > 1.0:
+        bearish_conditions.append(True)
+    bearish_count = sum(bearish_conditions)
+    
+    # Generate signal based on conditions met
+    if bullish_count >= 2:  # At least 2 oversold conditions
         signal = 'bullish'
-        confidence = min(abs(z_score.iloc[-1]) / 4, 1.0)
-    elif z_score.iloc[-1] > 2 and price_vs_bb > 0.8:
+        # Confidence based on how extreme the deviation is
+        if z_score_value < -1.5:
+            confidence = min(abs(z_score_value) / 3, 1.0)  # Strong deviation
+        else:
+            confidence = 0.6 + 0.2 * (bullish_count - 1)  # Moderate deviation
+        confidence = min(confidence, 1.0)
+    elif bearish_count >= 2:  # At least 2 overbought conditions
         signal = 'bearish'
-        confidence = min(abs(z_score.iloc[-1]) / 4, 1.0)
+        if z_score_value > 1.5:
+            confidence = min(abs(z_score_value) / 3, 1.0)  # Strong deviation
+        else:
+            confidence = 0.6 + 0.2 * (bearish_count - 1)  # Moderate deviation
+        confidence = min(confidence, 1.0)
     else:
         signal = 'neutral'
-        confidence = 0.5
+        # Even in neutral, provide some confidence based on proximity to extremes
+        if abs(z_score_value) > 1.0 or rsi_14_float < 40 or rsi_14_float > 60:
+            confidence = 0.4  # Somewhat informative
+        else:
+            confidence = 0.3  # Not very informative
+    
+    # Ensure RSI values are valid floats (not NaN)
+    # This is a safety check in case the conversion above failed
+    if pd.isna(rsi_14_float) or not isinstance(rsi_14_float, (int, float)) or np.isnan(rsi_14_float):
+        rsi_14_float = 50.0
+    if pd.isna(rsi_28_float) or not isinstance(rsi_28_float, (int, float)) or np.isnan(rsi_28_float):
+        rsi_28_float = 50.0
 
+    # 获取当前成交量比率用于返回
+    current_volume_ratio_value = float(volume_ratio.iloc[-1]) if len(volume_ratio) > 0 and pd.notna(volume_ratio.iloc[-1]) else 1.0
+    
     return {
         'signal': signal,
         'confidence': confidence,
         'metrics': {
-            'z_score': float(z_score.iloc[-1]),
-            'price_vs_bb': float(price_vs_bb),
-            'rsi_14': float(rsi_14.iloc[-1]),
-            'rsi_28': float(rsi_28.iloc[-1])
+            'z_score': float(z_score_value) if not pd.isna(z_score_value) else 0.0,
+            'price_vs_bb': float(price_vs_bb) if not pd.isna(price_vs_bb) else 0.5,
+            'rsi_14': float(rsi_14_float),
+            'rsi_28': float(rsi_28_float),
+            'volume_anomaly': bool(volume_anomaly),
+            'volume_ratio': current_volume_ratio_value,
+            'is_limit_up': bool(is_limit_up),
+            'is_limit_down': bool(is_limit_down)
         }
     }
 
@@ -465,6 +649,7 @@ def calculate_mean_reversion_signals(prices_df):
 def calculate_momentum_signals(prices_df):
     """
     Multi-factor momentum strategy with conservative settings
+    针对A股市场优化：考虑涨跌停板对动量的影响
     """
     # Price momentum with adjusted min_periods
     returns = prices_df['close'].pct_change()
@@ -472,14 +657,25 @@ def calculate_momentum_signals(prices_df):
     mom_3m = returns.rolling(63, min_periods=42).sum()  # 中期动量要求更多数据点
     mom_6m = returns.rolling(126, min_periods=63).sum()  # 长期动量保持严格要求
 
-    # Volume momentum
+    # Volume momentum - A股市场成交量很重要
     volume_ma = prices_df['volume'].rolling(21, min_periods=10).mean()
-    volume_momentum = prices_df['volume'] / volume_ma
+    volume_momentum = prices_df['volume'] / volume_ma.replace(0, np.nan)
+    
+    # 检测涨跌停板对动量的影响
+    limit_up_count = 0
+    limit_down_count = 0
+    if 'pct_change' in prices_df.columns and len(prices_df) >= 5:
+        recent_pct_changes = prices_df['pct_change'].iloc[-5:]
+        limit_up_count = ((recent_pct_changes >= A_SHARE_LIMIT_UP_THRESHOLD) | 
+                         (recent_pct_changes >= A_SHARE_ST_LIMIT_UP_THRESHOLD)).sum()
+        limit_down_count = ((recent_pct_changes <= A_SHARE_LIMIT_DOWN_THRESHOLD) | 
+                           (recent_pct_changes <= A_SHARE_ST_LIMIT_DOWN_THRESHOLD)).sum()
 
-    # 处理NaN值
-    mom_1m = mom_1m.fillna(0)  # 短期动量可以用0填充
-    mom_3m = mom_3m.fillna(mom_1m)  # 中期动量可以用短期动量填充
-    mom_6m = mom_6m.fillna(mom_3m)  # 长期动量可以用中期动量填充
+    # 处理NaN值 - 使用更保守的方法
+    # 如果数据不足，使用0而不是用短期数据填充，避免误导性信号
+    mom_1m = mom_1m.fillna(0)
+    mom_3m = mom_3m.fillna(0)  # 如果数据不足，使用0
+    mom_6m = mom_6m.fillna(0)  # 如果数据不足，使用0
 
     # Calculate momentum score with more weight on longer timeframes
     momentum_score = (
@@ -488,15 +684,57 @@ def calculate_momentum_signals(prices_df):
         0.5 * mom_6m    # 增加长期权重
     ).iloc[-1]
 
-    # Volume confirmation
-    volume_confirmation = volume_momentum.iloc[-1] > 1.0
+    # Volume confirmation - A股市场成交量确认很重要
+    volume_confirmation = False
+    current_volume_momentum = 1.0
+    if len(volume_momentum) > 0 and pd.notna(volume_momentum.iloc[-1]):
+        current_volume_momentum = volume_momentum.iloc[-1]
+        volume_confirmation = current_volume_momentum > 1.0
 
-    if momentum_score > 0.05 and volume_confirmation:
+    # 调整信号：考虑涨跌停板
+    # 如果连续涨停，动量可能被高估，需要谨慎
+    if limit_up_count >= 2:
+        momentum_score = momentum_score * 0.7  # 降低动量分数，因为涨停限制了真实动量
+        logger.info(f"检测到{limit_up_count}次涨停，调整动量分数")
+    # 如果连续跌停，动量可能被低估
+    if limit_down_count >= 2:
+        momentum_score = momentum_score * 0.7  # 同样降低，因为跌停限制了真实动量
+        logger.info(f"检测到{limit_down_count}次跌停，调整动量分数")
+
+    # 改进的信号判断逻辑：如果动量非常大，即使成交量不确认，也应该给予一定的信号
+    # 这避免了强大的正动量（如6月动量48%）被完全忽略
+    if momentum_score > 0.15:  # 非常大的动量（15%以上）
+        if volume_confirmation:
+            signal = 'bullish'
+            confidence = min(abs(momentum_score) * 5, 1.0)
+        else:
+            # 即使成交量不确认，也给予看涨信号（但降低置信度）
+            # 因为强大的历史动量不应该被完全忽略
+            signal = 'bullish'
+            confidence = min(abs(momentum_score) * 3, 0.75)  # 降低置信度但不过度惩罚
+        # 如果有涨停，降低置信度（涨停后可能回调）
+        if limit_up_count > 0:
+            confidence = confidence * 0.8
+    elif momentum_score > 0.05 and volume_confirmation:
         signal = 'bullish'
         confidence = min(abs(momentum_score) * 5, 1.0)
+        if limit_up_count > 0:
+            confidence = confidence * 0.8
+    elif momentum_score < -0.15:  # 非常大的负动量
+        if volume_confirmation:
+            signal = 'bearish'
+            confidence = min(abs(momentum_score) * 5, 1.0)
+        else:
+            # 即使成交量不确认，也给予看跌信号（但降低置信度）
+            signal = 'bearish'
+            confidence = min(abs(momentum_score) * 3, 0.75)
+        if limit_down_count > 0:
+            confidence = confidence * 0.8
     elif momentum_score < -0.05 and volume_confirmation:
         signal = 'bearish'
         confidence = min(abs(momentum_score) * 5, 1.0)
+        if limit_down_count > 0:
+            confidence = confidence * 0.8
     else:
         signal = 'neutral'
         confidence = 0.5
@@ -505,10 +743,12 @@ def calculate_momentum_signals(prices_df):
         'signal': signal,
         'confidence': confidence,
         'metrics': {
-            'momentum_1m': float(mom_1m.iloc[-1]),
-            'momentum_3m': float(mom_3m.iloc[-1]),
-            'momentum_6m': float(mom_6m.iloc[-1]),
-            'volume_momentum': float(volume_momentum.iloc[-1])
+            'momentum_1m': float(mom_1m.iloc[-1]) if pd.notna(mom_1m.iloc[-1]) else 0.0,
+            'momentum_3m': float(mom_3m.iloc[-1]) if pd.notna(mom_3m.iloc[-1]) else 0.0,
+            'momentum_6m': float(mom_6m.iloc[-1]) if pd.notna(mom_6m.iloc[-1]) else 0.0,
+            'volume_momentum': float(current_volume_momentum),
+            'limit_up_count': int(limit_up_count),
+            'limit_down_count': int(limit_down_count)
         }
     }
 
@@ -516,11 +756,13 @@ def calculate_momentum_signals(prices_df):
 def calculate_volatility_signals(prices_df):
     """
     Optimized volatility calculation with shorter lookback periods
+    针对A股市场优化：使用240个交易日进行年化（A股每年交易日约240-250天）
     """
     returns = prices_df['close'].pct_change()
 
     # 使用更短的周期和最小周期要求计算历史波动率
-    hist_vol = returns.rolling(21, min_periods=10).std() * math.sqrt(252)
+    # A股市场：使用240个交易日进行年化（而不是252）
+    hist_vol = returns.rolling(21, min_periods=10).std() * math.sqrt(A_SHARE_TRADING_DAYS_PER_YEAR)
 
     # 使用更短的周期计算波动率均值，并允许更少的数据点
     vol_ma = hist_vol.rolling(42, min_periods=21).mean()
@@ -528,17 +770,22 @@ def calculate_volatility_signals(prices_df):
 
     # 使用更灵活的标准差计算
     vol_std = hist_vol.rolling(42, min_periods=21).std()
-    vol_z_score = (hist_vol - vol_ma) / vol_std.replace(0, np.nan)
+    
+    # Handle division by zero safely
+    vol_z_score = np.where(
+        (pd.notna(vol_std)) & (vol_std > 0),
+        (hist_vol - vol_ma) / vol_std,
+        0.0  # When std is 0 or NaN, z-score is 0
+    )
+    vol_z_score = pd.Series(vol_z_score, index=hist_vol.index)
 
     # ATR计算优化
     atr = calculate_atr(prices_df, period=14, min_periods=7)
-    atr_ratio = atr / prices_df['close']
+    atr_ratio = atr / prices_df['close'].replace(0, np.nan)
 
-    # 如果关键指标为NaN，使用替代值而不是直接返回中性信号
-    if pd.isna(vol_regime.iloc[-1]):
-        vol_regime.iloc[-1] = 1.0  # 假设处于正常波动率区间
-    if pd.isna(vol_z_score.iloc[-1]):
-        vol_z_score.iloc[-1] = 0.0  # 假设处于均值位置
+    # Fill NaN values properly (avoid direct iloc assignment)
+    vol_regime = vol_regime.fillna(1.0)  # 假设处于正常波动率区间
+    vol_z_score = vol_z_score.fillna(0.0)  # 假设处于均值位置
 
     # Generate signal based on volatility regime
     current_vol_regime = vol_regime.iloc[-1]
@@ -580,11 +827,9 @@ def calculate_stat_arb_signals(prices_df):
     # 优化Hurst指数计算
     hurst = calculate_hurst_exponent(prices_df['close'], max_lag=10)
 
-    # 处理NaN值
-    if pd.isna(skew.iloc[-1]):
-        skew.iloc[-1] = 0.0  # 假设正态分布
-    if pd.isna(kurt.iloc[-1]):
-        kurt.iloc[-1] = 3.0  # 假设正态分布
+    # 处理NaN值 (使用fillna而不是直接赋值)
+    skew = skew.fillna(0.0)  # 假设正态分布
+    kurt = kurt.fillna(3.0)  # 假设正态分布
 
     # Generate signal based on statistical properties
     if hurst < 0.4 and skew.iloc[-1] > 1:
@@ -611,7 +856,33 @@ def calculate_stat_arb_signals(prices_df):
 def weighted_signal_combination(signals, weights):
     """
     Combines multiple trading signals using a weighted approach
+    针对A股市场优化：如果动量非常大，临时增加动量策略的权重
     """
+    # 如果动量非常大（如6月动量>30%），临时增加动量策略的权重
+    # 这确保强大的历史动量不会被其他策略完全抵消
+    momentum_signal = signals.get('momentum', {})
+    momentum_metrics = momentum_signal.get('metrics', {})
+    momentum_6m = abs(momentum_metrics.get('momentum_6m', 0)) if isinstance(momentum_metrics, dict) else 0
+    
+    adjusted_weights = weights.copy()
+    if momentum_6m > 0.3:  # 6月动量超过30%（绝对值）
+        # 临时增加动量策略权重（最多增加10%）
+        momentum_weight_increase = min(momentum_6m * 0.2, 0.10)  # 最多增加10%
+        original_momentum_weight = weights.get('momentum', 0.25)
+        adjusted_weights['momentum'] = original_momentum_weight + momentum_weight_increase
+        
+        # 按比例减少其他权重，保持总和为1
+        total_other_weight = sum(w for k, w in weights.items() if k != 'momentum')
+        if total_other_weight > 0:
+            reduction_factor = (total_other_weight - momentum_weight_increase) / total_other_weight
+            for key in adjusted_weights:
+                if key != 'momentum':
+                    adjusted_weights[key] = weights[key] * reduction_factor
+        
+        logger.info(f"检测到6月动量{momentum_6m:.2%}，临时增加动量策略权重至{adjusted_weights['momentum']:.2%}")
+    
+    weights = adjusted_weights
+    
     # Convert signals to numeric values
     signal_values = {
         'bullish': 1,
@@ -644,9 +915,20 @@ def weighted_signal_combination(signals, weights):
     else:
         signal = 'neutral'
 
+    # Calculate confidence based on weighted average of individual confidences
+    # This better reflects the overall confidence level
+    if total_confidence > 0:
+        # Normalize total_confidence by sum of weights to get average confidence
+        total_weight = sum(weights.values())
+        avg_confidence = total_confidence / total_weight if total_weight > 0 else 0.0
+        # Combine with signal strength
+        final_confidence = min(avg_confidence * (1 + abs(final_score)), 1.0)
+    else:
+        final_confidence = 0.0
+
     return {
         'signal': signal,
-        'confidence': abs(final_score)
+        'confidence': final_confidence
     }
 
 
@@ -660,6 +942,10 @@ def normalize_pandas(obj):
         return {k: normalize_pandas(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):
         return [normalize_pandas(item) for item in obj]
+    elif isinstance(obj, (int, float)) and pd.isna(obj):
+        # Handle NaN values: convert to None or a default value
+        # For RSI, use 50.0 as default (neutral value)
+        return None  # Will be handled by report template default
     return obj
 
 
@@ -672,24 +958,64 @@ def calculate_macd(prices_df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
 
 
 def calculate_rsi(prices_df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Calculate Relative Strength Index (RSI) using Wilder's smoothing method
+    
+    Args:
+        prices_df: DataFrame with price data
+        period: Period for RSI calculation (default 14)
+    
+    Returns:
+        pd.Series: RSI values
+    """
     delta = prices_df['close'].diff()
     gain = (delta.where(delta > 0, 0)).fillna(0)
     loss = (-delta.where(delta < 0, 0)).fillna(0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-    rs = avg_gain / avg_loss
+    
+    # Use Wilder's smoothing method (EMA with alpha=1/period)
+    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+    
+    # Handle division by zero: when avg_loss is 0, RSI should be 100 (or 50 if avg_gain is also 0)
+    rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
+    
+    # Fill NaN values: when avg_loss is 0, if avg_gain > 0 then RSI = 100, else RSI = 50
+    # Use pd.Series with same index for fillna to work correctly
+    fill_values = pd.Series(
+        np.where(avg_gain > 0, 100.0, 50.0),
+        index=rsi.index
+    )
+    rsi = rsi.fillna(fill_values)
+    
+    # Ensure no NaN values remain (fallback to 50 if still NaN)
+    rsi = rsi.fillna(50.0)
+    
     return rsi
 
 
 def calculate_bollinger_bands(
     prices_df: pd.DataFrame,
-    window: int = 20
+    window: int = 20,
+    num_std: float = 2.0
 ) -> tuple[pd.Series, pd.Series]:
+    """
+    计算布林带 - 针对A股市场优化
+    
+    Args:
+        prices_df: 价格数据DataFrame
+        window: 移动平均窗口（默认20）
+        num_std: 标准差倍数（默认2.0，A股市场波动性较大，可以考虑使用2.2）
+    
+    Returns:
+        (上轨, 下轨)
+    """
     sma = prices_df['close'].rolling(window).mean()
     std_dev = prices_df['close'].rolling(window).std()
-    upper_band = sma + (std_dev * 2)
-    lower_band = sma - (std_dev * 2)
+    # A股市场波动性较大，可以使用稍大的标准差倍数（如2.2）
+    # 但为了保持通用性，默认仍使用2.0，可在调用时调整
+    upper_band = sma + (std_dev * num_std)
+    lower_band = sma - (std_dev * num_std)
     return upper_band, lower_band
 
 
@@ -739,13 +1065,34 @@ def calculate_adx(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         0
     )
 
-    # Calculate ADX
-    df['+di'] = 100 * (df['plus_dm'].ewm(span=period).mean() /
-                       df['tr'].ewm(span=period).mean())
-    df['-di'] = 100 * (df['minus_dm'].ewm(span=period).mean() /
-                       df['tr'].ewm(span=period).mean())
-    df['dx'] = 100 * abs(df['+di'] - df['-di']) / (df['+di'] + df['-di'])
-    df['adx'] = df['dx'].ewm(span=period).mean()
+    # Calculate ADX using Wilder's smoothing
+    # Use alpha=1/period for Wilder's smoothing (equivalent to ewm with alpha)
+    tr_smoothed = df['tr'].ewm(alpha=1/period, adjust=False).mean()
+    plus_dm_smoothed = df['plus_dm'].ewm(alpha=1/period, adjust=False).mean()
+    minus_dm_smoothed = df['minus_dm'].ewm(alpha=1/period, adjust=False).mean()
+    
+    # Calculate +DI and -DI, handle division by zero
+    df['+di'] = np.where(
+        tr_smoothed > 0,
+        100 * (plus_dm_smoothed / tr_smoothed),
+        0
+    )
+    df['-di'] = np.where(
+        tr_smoothed > 0,
+        100 * (minus_dm_smoothed / tr_smoothed),
+        0
+    )
+    
+    # Calculate DX, handle division by zero when both DI are 0
+    di_sum = df['+di'] + df['-di']
+    df['dx'] = np.where(
+        di_sum > 0,
+        100 * abs(df['+di'] - df['-di']) / di_sum,
+        0  # When both DI are 0, DX is 0
+    )
+    
+    # Calculate ADX using Wilder's smoothing
+    df['adx'] = df['dx'].ewm(alpha=1/period, adjust=False).mean()
 
     return df[['adx', '+di', '-di']]
 
@@ -852,13 +1199,30 @@ def calculate_hurst_exponent(price_series: pd.Series, max_lag: int = 10) -> floa
 
 
 def calculate_obv(prices_df: pd.DataFrame) -> pd.Series:
+    """
+    计算OBV（On-Balance Volume）指标
+    针对A股市场优化：处理停牌、异常成交量等情况
+    """
     obv = [0]
     for i in range(1, len(prices_df)):
-        if prices_df['close'].iloc[i] > prices_df['close'].iloc[i - 1]:
-            obv.append(obv[-1] + prices_df['volume'].iloc[i])
-        elif prices_df['close'].iloc[i] < prices_df['close'].iloc[i - 1]:
-            obv.append(obv[-1] - prices_df['volume'].iloc[i])
+        current_volume = prices_df['volume'].iloc[i] if 'volume' in prices_df.columns else 0
+        prev_volume = prices_df['volume'].iloc[i - 1] if 'volume' in prices_df.columns else 0
+        
+        # 处理停牌情况：如果成交量为0或异常低，OBV保持不变
+        if current_volume == 0 or (prev_volume > 0 and current_volume / prev_volume < 0.01):
+            obv.append(obv[-1])  # 停牌时OBV不变
+            continue
+        
+        current_close = prices_df['close'].iloc[i]
+        prev_close = prices_df['close'].iloc[i - 1]
+        
+        if current_close > prev_close:
+            obv.append(obv[-1] + current_volume)
+        elif current_close < prev_close:
+            obv.append(obv[-1] - current_volume)
         else:
-            obv.append(obv[-1])
-    prices_df['OBV'] = obv
-    return prices_df['OBV']
+            obv.append(obv[-1])  # 价格不变，OBV不变
+    
+    # 创建OBV Series，确保索引与prices_df一致
+    obv_series = pd.Series(obv, index=prices_df.index)
+    return obv_series

@@ -161,24 +161,56 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
     risk_signal_summary = next(
         (s for s in valid_signals if s.get("agent_name") == "risk_management"), None)
     
+    # 定义辅助函数（必须在使用之前定义）
+    def parse_confidence(confidence_value):
+        """解析置信度值，支持字符串和数字格式
+        统一处理逻辑：确保返回0-1之间的浮点数
+        """
+        if confidence_value is None:
+            return 0.0
+        if isinstance(confidence_value, str):
+            cleaned = confidence_value.strip().replace('%', '')
+            try:
+                value = float(cleaned)
+                # 如果大于1，假设是百分比形式，需要除以100
+                return value / 100.0 if value > 1.0 else value
+            except ValueError:
+                return 0.0
+        if isinstance(confidence_value, (int, float)):
+            # 如果大于1，假设是百分比形式，需要除以100
+            return float(confidence_value) / 100.0 if confidence_value > 1.0 else float(confidence_value)
+        return 0.0
+    
     # 从原始 agent 数据中获取详细信息（如果可用）
     # 优先使用原始数据，因为它包含完整的 reasoning 信息
     fundamental_signal = raw_agent_data.get("fundamentals", {}) if raw_agent_data else {}
     if fundamental_signal_summary:
         # 合并信号摘要（signal, confidence）到原始数据
         fundamental_signal = {**fundamental_signal, **fundamental_signal_summary}
+        # 确保 confidence 被正确标准化
+        if "confidence" in fundamental_signal:
+            fundamental_signal["confidence"] = parse_confidence(fundamental_signal["confidence"])
     
     valuation_signal = raw_agent_data.get("valuation", {}) if raw_agent_data else {}
     if valuation_signal_summary:
         valuation_signal = {**valuation_signal, **valuation_signal_summary}
+        # 确保 confidence 被正确标准化（可能是字符串格式如 "38%"）
+        if "confidence" in valuation_signal:
+            valuation_signal["confidence"] = parse_confidence(valuation_signal["confidence"])
     
     technical_signal = raw_agent_data.get("technical", {}) if raw_agent_data else {}
     if technical_signal_summary:
         technical_signal = {**technical_signal, **technical_signal_summary}
+        # 确保 confidence 被正确标准化
+        if "confidence" in technical_signal:
+            technical_signal["confidence"] = parse_confidence(technical_signal["confidence"])
     
     sentiment_signal = raw_agent_data.get("sentiment", {}) if raw_agent_data else {}
     if sentiment_signal_summary:
         sentiment_signal = {**sentiment_signal, **sentiment_signal_summary}
+        # 确保 confidence 被正确标准化
+        if "confidence" in sentiment_signal:
+            sentiment_signal["confidence"] = parse_confidence(sentiment_signal["confidence"])
     
     risk_signal = raw_agent_data.get("risk", {}) if raw_agent_data else {}
     if risk_signal_summary:
@@ -205,21 +237,6 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
             return "看空"
         return "中性"
     
-    def parse_confidence(confidence_value):
-        """解析置信度值，支持字符串和数字格式"""
-        if confidence_value is None:
-            return 0.0
-        if isinstance(confidence_value, str):
-            cleaned = confidence_value.strip().replace('%', '')
-            try:
-                value = float(cleaned)
-                return value if value <= 1.0 else value / 100.0
-            except ValueError:
-                return 0.0
-        if isinstance(confidence_value, (int, float)):
-            return float(confidence_value) if confidence_value <= 1.0 else confidence_value / 100.0
-        return 0.0
-    
     def get_valuation_details(valuation_signal):
         """根据估值方法类型返回相应的估值详情"""
         if not valuation_signal:
@@ -227,9 +244,51 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
         
         reasoning = valuation_signal.get('reasoning', {})
         valuation_method = reasoning.get('valuation_method', '')
+        company_type = reasoning.get('company_type', '')
         
-        # 检查是否为基于营收的估值（成长型公司）
-        if 'Revenue-Based' in valuation_method or reasoning.get('company_type', '').startswith('Growth'):
+        # 检查是否为已盈利成长型公司（三种方法）
+        if 'Three Methods' in valuation_method or company_type == 'Profitable Growth Company':
+            dcf_details = reasoning.get('dcf_analysis', {}).get('details', '无数据')
+            oe_details = reasoning.get('owner_earnings_analysis', {}).get('details', '无数据')
+            revenue_details = reasoning.get('revenue_based_analysis', {}).get('details', '无数据')
+            combined_info = reasoning.get('combined_valuation', {})
+            combined_gap = combined_info.get('combined_gap', 'N/A')
+            
+            # 确保格式一致，移除可能的额外空格和换行，统一处理
+            dcf_details = str(dcf_details).strip().replace('\n', ' ').replace('\r', '')
+            oe_details = str(oe_details).strip().replace('\n', ' ').replace('\r', '')
+            revenue_details = str(revenue_details).strip().replace('\n', ' ').replace('\r', '')
+            combined_gap = str(combined_gap).strip()
+            
+            # 处理DCF详情：转换英文格式为中文格式，避免重复前缀
+            # 旧的valuation.py返回英文格式：Intrinsic Value: ¥...亿, Market Cap: ¥...亿, Gap: ...%
+            # 新的valuation_v2.py返回中文格式：DCF估值: ¥...亿, 市值: ¥...亿, 差距: ...%
+            if dcf_details.startswith('Intrinsic Value:'):
+                # 转换英文格式为中文格式
+                dcf_display = dcf_details.replace('Intrinsic Value:', 'DCF估值:').replace('Market Cap:', '市值:').replace('Gap:', '差距:')
+            elif dcf_details.startswith('DCF估值:'):
+                dcf_display = dcf_details
+            elif dcf_details.startswith('DCF估值: '):
+                dcf_display = dcf_details
+            else:
+                dcf_display = f"DCF估值: {dcf_details}"
+            
+            # 处理所有者收益法详情：转换英文格式为中文格式
+            if oe_details.startswith('Owner Earnings Value:'):
+                # 转换英文格式为中文格式
+                oe_display = oe_details.replace('Owner Earnings Value:', '所有者收益法估值:').replace('Market Cap:', '市值:').replace('Gap:', '差距:')
+            elif oe_details.startswith('所有者收益法估值:'):
+                oe_display = oe_details
+            elif oe_details.startswith('所有者收益法估值: '):
+                oe_display = oe_details
+            else:
+                oe_display = f"所有者收益法估值: {oe_details}"
+            
+            # 统一格式：每行3个空格 + "- " + 内容
+            return f"   - {dcf_display}\n   - {oe_display}\n   - 营收估值法: {revenue_details}\n   - 综合估值差距: {combined_gap}"
+        
+        # 检查是否为基于营收的估值（未盈利成长型公司）
+        if 'Revenue-Based' in valuation_method or company_type.startswith('Growth'):
             revenue_analysis = reasoning.get('revenue_based_analysis', {})
             details = revenue_analysis.get('details', '无数据')
             return f"   - 营收估值法（成长型公司）: {details}"
@@ -237,7 +296,37 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
         # 标准估值方法（DCF + 所有者收益法）
         dcf_details = reasoning.get('dcf_analysis', {}).get('details', '无数据')
         oe_details = reasoning.get('owner_earnings_analysis', {}).get('details', '无数据')
-        return f"   - DCF估值: {dcf_details}\n   - 所有者收益法: {oe_details}"
+        
+        # 确保格式一致，移除可能的额外空格和换行
+        dcf_details = str(dcf_details).strip().replace('\n', ' ').replace('\r', '')
+        oe_details = str(oe_details).strip().replace('\n', ' ').replace('\r', '')
+        
+        # 处理DCF详情：转换英文格式为中文格式，避免重复前缀
+        # 旧的valuation.py返回英文格式：Intrinsic Value: ¥...亿, Market Cap: ¥...亿, Gap: ...%
+        # 新的valuation_v2.py返回中文格式：DCF估值: ¥...亿, 市值: ¥...亿, 差距: ...%
+        if dcf_details.startswith('Intrinsic Value:'):
+            # 转换英文格式为中文格式
+            dcf_display = dcf_details.replace('Intrinsic Value:', 'DCF估值:').replace('Market Cap:', '市值:').replace('Gap:', '差距:')
+        elif dcf_details.startswith('DCF估值:'):
+            dcf_display = dcf_details
+        elif dcf_details.startswith('DCF估值: '):
+            dcf_display = dcf_details
+        else:
+            dcf_display = f"DCF估值: {dcf_details}"
+        
+        # 处理所有者收益法详情：转换英文格式为中文格式
+        if oe_details.startswith('Owner Earnings Value:'):
+            # 转换英文格式为中文格式
+            oe_display = oe_details.replace('Owner Earnings Value:', '所有者收益法估值:').replace('Market Cap:', '市值:').replace('Gap:', '差距:')
+        elif oe_details.startswith('所有者收益法估值:'):
+            oe_display = oe_details
+        elif oe_details.startswith('所有者收益法估值: '):
+            oe_display = oe_details
+        else:
+            oe_display = f"所有者收益法估值: {oe_details}"
+        
+        # 统一格式：每行3个空格 + "- " + 内容
+        return f"   - {dcf_display}\n   - {oe_display}"
 
     detailed_analysis = f"""
 ====================================
@@ -271,7 +360,7 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
 
 3. 估值分析 (权重15%):
    信号: {signal_to_chinese(valuation_signal)}
-   置信度: {parse_confidence((valuation_signal or {}).get('confidence', 0.0)):.0f}%
+   置信度: {parse_confidence((valuation_signal or {}).get('confidence', 0.0)) * 100:.0f}%
    要点:
    {get_valuation_details(valuation_signal)}
 

@@ -146,8 +146,9 @@ def estimate_growth_rates(
         # 过渡期起始增长率：高增长期的70%
         transition_growth_rate = high_growth_rate * 0.7
         
-        # 永续增长率：使用中国GDP长期增长率（约3-4%）
-        terminal_growth_rate = 0.03
+        # 永续增长率：A股市场长期增长率（考虑GDP增速放缓趋势）
+        # A股市场特点：长期增长潜力略高但波动性大，永续增长率设为2.5%更合理
+        terminal_growth_rate = 0.025  # A股市场永续增长率2.5%（从3%降低，更符合长期趋势）
         
         logger.info(f"Growth Rate Estimation:")
         logger.info(f"  Historical FCF Growth: {avg_fcf_growth:.2%}")

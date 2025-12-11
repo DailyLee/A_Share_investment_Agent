@@ -162,6 +162,11 @@ def extract_financial_data_from_state(data: dict) -> dict:
     net_income = current_line_item.get("net_income", 0)
     net_margin = net_income / operating_revenue if operating_revenue > 0 else 0
     
+    # A股市场特点：考虑股息率（高股息率股票更受青睐）
+    # 注意：这里假设可以从财务数据中获取分红数据，如果没有则设为0
+    dividend_paid = current_line_item.get("dividend_paid", 0)  # 分红金额
+    dividend_yield = dividend_paid / market_cap if market_cap > 0 and dividend_paid > 0 else 0
+    
     return {
         # 从financial_metrics获取
         "earnings_growth": financial_metrics.get("earnings_growth", 0.05),
@@ -178,6 +183,8 @@ def extract_financial_data_from_state(data: dict) -> dict:
         "capex": current_line_item.get("capital_expenditure", 0),
         "free_cash_flow": current_line_item.get("free_cash_flow", 0),
         "working_capital": current_line_item.get("working_capital", 0),
+        "dividend_paid": dividend_paid,  # 分红金额
+        "dividend_yield": dividend_yield,  # 股息率
         
         # 从previous_line_item获取（上期）
         "prev_net_income": previous_line_item.get("net_income", 0),
@@ -230,13 +237,23 @@ def valuation_agent_v2(state: AgentState):
         
         # 使用综合指标识别成长型公司
         growth_check = identify_growth_company(fin_data, industry_code, market_cap)
+        is_growth_company = growth_check.get("is_growth", False)
+        is_profitable = fin_data.get("net_income", 0) > 0
         
-        if growth_check.get("is_growth", False):
-            logger.info("检测到成长型公司，使用基于营收的估值方法")
+        # 如果是成长型公司且已盈利，使用三种方法：DCF、所有者收益法、营收估值法
+        if is_growth_company and is_profitable:
+            logger.info("检测到已盈利的成长型公司，使用三种估值方法：DCF + 所有者收益法 + 营收估值法")
+            logger.info(f"识别原因: {growth_check.get('reason', 'N/A')}")
+            return handle_profitable_growth_company_valuation(state, fin_data, industry_code, market_cap, valuation_params)
+        
+        # 如果是成长型公司但未盈利，只使用营收估值法
+        if is_growth_company and not is_profitable:
+            logger.info("检测到成长型公司（未盈利），使用基于营收的估值方法")
             logger.info(f"识别原因: {growth_check.get('reason', 'N/A')}")
             return handle_growth_company_valuation(state, fin_data, industry_code, market_cap)
         
-        if not fin_data.get("net_income") or fin_data["net_income"] <= 0:
+        # 如果不是成长型公司且未盈利，回退到传统方法
+        if not is_profitable:
             logger.warning("财务数据不完整或净利润为负，回退到传统方法")
             return fallback_to_traditional_valuation(state)
         
@@ -259,7 +276,9 @@ def valuation_agent_v2(state: AgentState):
         high_growth_rate = max(0.03, min(high_growth_rate, 0.30))  # 限制在3%-30%
         
         transition_growth_rate = high_growth_rate * 0.7
-        terminal_growth_rate = 0.03  # GDP长期增长率
+        # A股市场长期增长率：考虑中国GDP增速放缓趋势，永续增长率设为2.5%（更保守）
+        # 相比成熟市场，A股市场长期增长潜力略高但波动性也更大
+        terminal_growth_rate = 0.025  # A股市场永续增长率2.5%（从3%降低到2.5%，更符合长期趋势）
         
         logger.info(f"高增长率: {high_growth_rate:.2%}")
         logger.info(f"过渡增长率: {transition_growth_rate:.2%}")
@@ -469,7 +488,10 @@ def valuation_agent_v2(state: AgentState):
                 logger.warning(f"   4. 财务数据可能不准确（如自由现金流、所有者收益为负）")
                 logger.warning(f"   建议：检查财务数据质量和估值参数设置")
             
-            # 确定信号
+            # 确定信号（基于A股市场特点优化阈值）
+            # A股市场特点：波动性大，需要更大的安全边际
+            # 低估阈值：15%（A股市场低估机会相对较多，但需要谨慎）
+            # 高估阈值：-20%（A股市场高估时波动可能更大）
             if valuation_gap > 0.15:  # 低估超过15%
                 signal = 'bullish'
             elif valuation_gap < -0.20:  # 高估超过20%
@@ -512,7 +534,14 @@ def valuation_agent_v2(state: AgentState):
                     "stage3": f"¥{oe_result.get('stage3_value', 0)/100000000:.2f}亿"
                 } if oe_value > 0 else {}
             },
-            "valuation_method": "Three-Stage DCF + Owner Earnings (Buffett Method)"
+            "valuation_method": "Three-Stage DCF + Owner Earnings (Buffett Method)",
+            "a_share_market_features": {
+                "note": "基于A股市场特点优化：波动性大、政策敏感性强、估值体系更关注PE/PB",
+                "risk_free_rate": f"{CHINA_RISK_FREE_RATE:.2%}",
+                "market_risk_premium": f"{CHINA_MARKET_RISK_PREMIUM:.2%}",
+                "terminal_growth_rate": "2.5%",
+                "dividend_yield": f"{fin_data.get('dividend_yield', 0):.2%}" if fin_data.get('dividend_yield', 0) > 0 else "N/A"
+            }
         }
         
         # 计算置信度：当两种方法方向相反时，使用两种方法差距的加权平均绝对值
@@ -560,6 +589,296 @@ def valuation_agent_v2(state: AgentState):
         return fallback_to_traditional_valuation(state)
 
 
+def handle_profitable_growth_company_valuation(
+    state: AgentState,
+    fin_data: dict,
+    industry_code: str,
+    market_cap: float,
+    valuation_params: dict
+) -> dict:
+    """
+    处理已盈利成长型公司的估值
+    
+    使用三种估值方法：
+    1. DCF估值
+    2. 所有者收益法
+    3. 营收估值法
+    """
+    show_reasoning = state["metadata"]["show_reasoning"]
+    data = state["data"]
+    ticker = data["ticker"]
+    industry_name = data.get("industry", "")
+    market_cap_yi = data.get("market_cap", 0)
+    
+    logger.info(f"\n{'='*60}")
+    logger.info(f"已盈利成长型公司估值分析: {ticker}")
+    logger.info(f"行业: {industry_name}")
+    logger.info(f"当前市值: ¥{market_cap_yi:.2f}亿")
+    logger.info(f"{'='*60}\n")
+    
+    # ==================== 计算税率 ====================
+    if fin_data["operating_profit"] > 0 and fin_data["net_income"] > 0:
+        tax_rate = 1 - (fin_data["net_income"] / fin_data["operating_profit"])
+        tax_rate = max(0.15, min(tax_rate, 0.35))
+    else:
+        tax_rate = DEFAULT_TAX_RATE
+    
+    # ==================== 增长率估算 ====================
+    earnings_growth = fin_data.get("earnings_growth", 0.05)
+    revenue_growth = fin_data.get("revenue_growth", 0.05)
+    
+    # 综合增长率（营收增长40% + 利润增长60%）
+    high_growth_rate = 0.4 * revenue_growth + 0.6 * earnings_growth
+    high_growth_rate = max(0.03, min(high_growth_rate, 0.30))
+    
+    transition_growth_rate = high_growth_rate * 0.7
+    terminal_growth_rate = 0.025
+    
+    # ==================== DCF估值 ====================
+    logger.info("\n" + "="*60)
+    logger.info("方法1: DCF估值分析")
+    logger.info("="*60)
+    
+    total_equity = market_cap if market_cap > 0 else fin_data["net_income"] * 15
+    total_debt = 0
+    industry_beta = INDUSTRY_BETAS.get(industry_code, DEFAULT_BETA)
+    
+    wacc = calculate_wacc(
+        risk_free_rate=CHINA_RISK_FREE_RATE,
+        market_risk_premium=CHINA_MARKET_RISK_PREMIUM,
+        beta=industry_beta,
+        total_debt=total_debt,
+        total_equity=total_equity,
+        cost_of_debt=DEFAULT_COST_OF_DEBT,
+        tax_rate=tax_rate
+    )
+    
+    initial_fcf = fin_data["free_cash_flow"]
+    if initial_fcf > 0:
+        dcf_result = calculate_three_stage_dcf(
+            initial_fcf=initial_fcf,
+            high_growth_rate=high_growth_rate,
+            transition_growth_rate=transition_growth_rate,
+            terminal_growth_rate=terminal_growth_rate,
+            wacc=wacc,
+            high_growth_years=5,
+            transition_years=5,
+            total_debt=total_debt,
+            cash_and_equivalents=0,
+            shares_outstanding=0
+        )
+        dcf_value = dcf_result.get('enterprise_value', 0)
+        dcf_value_yi = dcf_value / 100_000_000
+    else:
+        logger.warning(f"自由现金流为负或为零，无法执行DCF估值")
+        dcf_value = 0
+        dcf_value_yi = 0
+        dcf_result = {"enterprise_value": 0, "error": "Invalid FCF"}
+    
+    # ==================== 所有者收益法估值 ====================
+    logger.info("\n" + "="*60)
+    logger.info("方法2: 所有者收益法估值分析")
+    logger.info("="*60)
+    
+    maintenance_ratios = {
+        "utilities": 0.7, "heavy_industry": 0.6, "technology": 0.3,
+        "finance": 0.4, "consumer": 0.5, "healthcare": 0.4,
+        "real_estate": 0.5, "manufacturing": 0.6, "services": 0.4,
+        "default": 0.5
+    }
+    maintenance_ratio = maintenance_ratios.get(industry_code, 0.5)
+    
+    working_capital_change = fin_data["working_capital"] - fin_data.get("prev_working_capital", fin_data["working_capital"])
+    if abs(working_capital_change) > abs(fin_data["net_income"]) * 0.5:
+        if fin_data["operating_revenue"] > 0:
+            wc_change_ratio = 0.03 if industry_code == "utilities" else 0.02
+            working_capital_change = fin_data["operating_revenue"] * wc_change_ratio
+    
+    owner_earnings = calculate_owner_earnings(
+        net_income=fin_data["net_income"],
+        depreciation=fin_data["depreciation"],
+        capex=fin_data["capex"],
+        working_capital_change=working_capital_change,
+        maintenance_capex_ratio=maintenance_ratio
+    )
+    
+    if owner_earnings <= 0 or owner_earnings < fin_data["net_income"] * 0.1:
+        owner_earnings = fin_data["net_income"] * 0.8
+    
+    if owner_earnings > 0:
+        oe_params = valuation_params["owner_earnings"]
+        oe_result = calculate_three_stage_owner_earnings_value(
+            initial_owner_earnings=owner_earnings,
+            high_growth_rate=high_growth_rate,
+            transition_growth_rate=transition_growth_rate,
+            terminal_growth_rate=terminal_growth_rate,
+            required_return=oe_params["required_return"],
+            high_growth_years=5,
+            transition_years=5,
+            margin_of_safety=oe_params["margin_of_safety"],
+            total_debt=total_debt,
+            cash_and_equivalents=0
+        )
+        oe_value = oe_result.get('intrinsic_value_with_margin', 0)
+        oe_value_yi = oe_value / 100_000_000
+    else:
+        oe_value = 0
+        oe_value_yi = 0
+        oe_result = {"intrinsic_value_with_margin": 0, "error": "Invalid owner earnings"}
+    
+    # ==================== 营收估值法 ====================
+    logger.info("\n" + "="*60)
+    logger.info("方法3: 营收估值法分析")
+    logger.info("="*60)
+    
+    operating_revenue = fin_data.get("operating_revenue", 0)
+    net_income = fin_data.get("net_income", 0)
+    net_margin = fin_data.get("net_margin", 0)
+    
+    years_to_profitability = 2 if industry_code == "technology" else 3
+    target_profit_margin = 0.15 if industry_code == "technology" else 0.10
+    
+    revenue_result = calculate_revenue_based_valuation(
+        operating_revenue=operating_revenue,
+        revenue_growth_rate=revenue_growth,
+        industry_code=industry_code,
+        market_cap=market_cap,
+        years_to_profitability=years_to_profitability,
+        target_profit_margin=target_profit_margin,
+        current_net_income=net_income,
+        current_net_margin=net_margin
+    )
+    
+    revenue_value = revenue_result.get('revenue_value', 0)
+    revenue_value_yi = revenue_value / 100_000_000
+    
+    # ==================== 综合估值分析 ====================
+    logger.info("\n" + "="*60)
+    logger.info("综合估值分析（三种方法）")
+    logger.info("="*60)
+    
+    if market_cap <= 0:
+        logger.warning("市值数据无效，无法进行估值比较")
+        signal = 'neutral'
+        valuation_gap = 0
+        dcf_gap = 0
+        oe_gap = 0
+        revenue_gap = 0
+    else:
+        # 计算各方法的估值差距
+        dcf_gap = (dcf_value - market_cap) / market_cap if dcf_value > 0 else 0
+        oe_gap = (oe_value - market_cap) / market_cap if oe_value > 0 else 0
+        revenue_gap = (revenue_value - market_cap) / market_cap if revenue_value > 0 else 0
+        
+        # 计算有效方法数量
+        valid_methods = []
+        if dcf_value > 0:
+            valid_methods.append(("dcf", dcf_gap))
+        if oe_value > 0:
+            valid_methods.append(("oe", oe_gap))
+        if revenue_value > 0:
+            valid_methods.append(("revenue", revenue_gap))
+        
+        if len(valid_methods) == 0:
+            logger.warning("三种估值方法都无效，回退到传统方法")
+            return fallback_to_traditional_valuation(state)
+        
+        # 对于已盈利成长型公司，使用加权平均
+        # DCF和所有者收益法各30%，营收估值法40%（因为成长型公司更关注营收增长）
+        weights = {"dcf": 0.3, "oe": 0.3, "revenue": 0.4}
+        total_weight = sum(weights.get(method[0], 0) for method in valid_methods)
+        
+        if total_weight > 0:
+            valuation_gap = sum(weights.get(method[0], 0) * method[1] for method in valid_methods) / total_weight
+        else:
+            # 如果权重计算有问题，使用简单平均
+            valuation_gap = sum(method[1] for method in valid_methods) / len(valid_methods)
+        
+        logger.info(f"DCF估值: ¥{dcf_value_yi:.2f}亿, 差距: {dcf_gap:.1%}")
+        logger.info(f"所有者收益法估值: ¥{oe_value_yi:.2f}亿, 差距: {oe_gap:.1%}")
+        logger.info(f"营收估值法: ¥{revenue_value_yi:.2f}亿, 差距: {revenue_gap:.1%}")
+        logger.info(f"当前市值: ¥{market_cap_yi:.2f}亿")
+        logger.info(f"综合估值差距: {valuation_gap:.1%}")
+        
+        # 确定信号
+        if valuation_gap > 0.15:
+            signal = 'bullish'
+        elif valuation_gap < -0.20:
+            signal = 'bearish'
+        else:
+            signal = 'neutral'
+    
+    # 构建推理信息
+    reasoning = {
+        "valuation_method": "Three Methods: DCF + Owner Earnings + Revenue-Based (for Profitable Growth Companies)",
+        "company_type": "Profitable Growth Company",
+        "dcf_analysis": {
+            "signal": "bullish" if dcf_gap > 0.15 else "bearish" if dcf_gap < -0.20 else "neutral",
+            "details": f"DCF估值: ¥{dcf_value_yi:.2f}亿, 市值: ¥{market_cap_yi:.2f}亿, 差距: {dcf_gap:.1%}" if dcf_value > 0 else "DCF估值不可用",
+            "stage_breakdown": {
+                "stage1": f"¥{dcf_result.get('stage1_value', 0)/100000000:.2f}亿",
+                "stage2": f"¥{dcf_result.get('stage2_value', 0)/100000000:.2f}亿",
+                "stage3": f"¥{dcf_result.get('stage3_value', 0)/100000000:.2f}亿"
+            } if dcf_value > 0 else {}
+        },
+        "owner_earnings_analysis": {
+            "signal": "bullish" if oe_gap > 0.15 else "bearish" if oe_gap < -0.20 else "neutral",
+            "details": f"所有者收益法估值: ¥{oe_value_yi:.2f}亿, 市值: ¥{market_cap_yi:.2f}亿, 差距: {oe_gap:.1%}" if oe_value > 0 else "所有者收益法估值不可用",
+            "owner_earnings": f"¥{owner_earnings/100000000:.2f}亿" if owner_earnings > 0 else "N/A"
+        },
+        "revenue_based_analysis": {
+            "signal": "bullish" if revenue_gap > 0.15 else "bearish" if revenue_gap < -0.20 else "neutral",
+            "details": f"营收估值: ¥{revenue_value_yi:.2f}亿, 市值: ¥{market_cap_yi:.2f}亿, 差距: {revenue_gap:.1%}" if revenue_value > 0 else "营收估值不可用",
+            "ps_ratio": f"{revenue_result.get('ps_ratio', 0):.2f}",
+            "revenue_growth_rate": f"{revenue_growth:.2%}"
+        },
+        "combined_valuation": {
+            "dcf_weight": "30%",
+            "owner_earnings_weight": "30%",
+            "revenue_weight": "40%",
+            "combined_gap": f"{valuation_gap:.1%}"
+        }
+    }
+    
+    # 计算置信度：使用三种方法差距绝对值的加权平均
+    confidence_value = 0.0
+    if dcf_value > 0 and oe_value > 0 and revenue_value > 0:
+        confidence_value = 0.3 * abs(dcf_gap) + 0.3 * abs(oe_gap) + 0.4 * abs(revenue_gap)
+    elif len(valid_methods) > 0:
+        # 如果只有部分方法有效，使用有效方法的加权平均
+        total_weight = sum(weights.get(method[0], 0) for method in valid_methods)
+        if total_weight > 0:
+            confidence_value = sum(weights.get(method[0], 0) * abs(method[1]) for method in valid_methods) / total_weight
+        else:
+            confidence_value = sum(abs(method[1]) for method in valid_methods) / len(valid_methods)
+    
+    message_content = {
+        "signal": signal,
+        "confidence": f"{confidence_value:.0%}",
+        "reasoning": reasoning
+    }
+    
+    message = HumanMessage(
+        content=json.dumps(message_content),
+        name="valuation_agent_v2",
+    )
+    
+    if show_reasoning:
+        show_agent_reasoning(message_content, "Valuation Analysis Agent V2 (Profitable Growth Company)")
+        state["metadata"]["agent_reasoning"] = message_content
+    
+    show_workflow_status("Valuation Agent V2 (Profitable Growth Company)", "completed")
+    
+    return {
+        "messages": [message],
+        "data": {
+            **data,
+            "valuation_analysis": message_content
+        },
+        "metadata": state["metadata"],
+    }
+
+
 def handle_growth_company_valuation(
     state: AgentState,
     fin_data: dict,
@@ -600,6 +919,10 @@ def handle_growth_company_valuation(
         years_to_profitability = 4  # 医药公司可能需要更长时间
         target_profit_margin = 0.20  # 医药公司利润率通常较高
     
+    # 获取当前盈利数据（如果已盈利）
+    net_income = fin_data.get("net_income", 0)
+    net_margin = fin_data.get("net_margin", 0)
+    
     # 执行基于营收的估值
     revenue_result = calculate_revenue_based_valuation(
         operating_revenue=operating_revenue,
@@ -607,7 +930,9 @@ def handle_growth_company_valuation(
         industry_code=industry_code,
         market_cap=market_cap,
         years_to_profitability=years_to_profitability,
-        target_profit_margin=target_profit_margin
+        target_profit_margin=target_profit_margin,
+        current_net_income=net_income,
+        current_net_margin=net_margin
     )
     
     revenue_value = revenue_result.get('revenue_value', 0)

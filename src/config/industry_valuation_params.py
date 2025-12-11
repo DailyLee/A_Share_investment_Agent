@@ -28,9 +28,9 @@ INDUSTRY_KEYWORDS = {
 DEFAULT_PARAMS = {
     "owner_earnings": {
         "required_return": 0.10,      # 要求回报率 10%（调整：从12%降低到10%，提高估值合理性）
-        "margin_of_safety": 0.15,     # 安全边际 15%（调整：从20%降低到15%，适度保守）
+        "margin_of_safety": 0.18,     # 安全边际 18%（A股市场波动性大，需要更高安全边际）
         "terminal_growth_factor": 0.4, # 永续增长率 = growth_rate * 0.4
-        "terminal_growth_cap": 0.03,   # 永续增长率上限 3%
+        "terminal_growth_cap": 0.025,   # 永续增长率上限 2.5%（A股市场长期增长趋势）
         "use_maintenance_capex": False, # 是否只扣除维持性资本支出
         "maintenance_capex_ratio": 0.5, # 维持性资本支出占比（当use_maintenance_capex=True时）
         "use_declining_growth": True,  # 是否使用递减增长率模型
@@ -38,7 +38,7 @@ DEFAULT_PARAMS = {
     "dcf": {
         "discount_rate": 0.10,         # 折现率 10%
         "terminal_growth_factor": 0.4, # 永续增长率 = growth_rate * 0.4
-        "terminal_growth_cap": 0.03,   # 永续增长率上限 3%
+        "terminal_growth_cap": 0.025,   # 永续增长率上限 2.5%（A股市场长期增长趋势）
     }
 }
 
@@ -46,9 +46,9 @@ DEFAULT_PARAMS = {
 UTILITIES_PARAMS = {
     "owner_earnings": {
         "required_return": 0.085,      # 降低要求回报率（现金流稳定，调整：从10%降低到8.5%）
-        "margin_of_safety": 0.12,      # 降低安全边际（蓝筹股风险较低，调整：从15%降低到12%）
+        "margin_of_safety": 0.15,      # 安全边际15%（A股市场波动性大，蓝筹股也需要适度安全边际）
         "terminal_growth_factor": 0.6, # 提高永续增长率系数
-        "terminal_growth_cap": 0.04,   # 永续增长率上限提高到 4%
+        "terminal_growth_cap": 0.03,   # 永续增长率上限3%（A股市场长期增长趋势）
         "use_maintenance_capex": True, # 只扣除维持性资本支出
         "maintenance_capex_ratio": 0.4, # 维持性资本支出约占总资本支出的40%
         "use_declining_growth": False, # 不使用递减增长率（现金流稳定）
@@ -56,7 +56,7 @@ UTILITIES_PARAMS = {
     "dcf": {
         "discount_rate": 0.08,         # 降低折现率（风险较低）
         "terminal_growth_factor": 0.6,
-        "terminal_growth_cap": 0.04,
+        "terminal_growth_cap": 0.03,   # A股市场永续增长率上限3%
     }
 }
 
@@ -64,7 +64,7 @@ UTILITIES_PARAMS = {
 HEAVY_INDUSTRY_PARAMS = {
     "owner_earnings": {
         "required_return": 0.13,       # 提高要求回报率（周期性风险）
-        "margin_of_safety": 0.25,      # 提高安全边际（周期性风险）
+        "margin_of_safety": 0.28,      # 提高安全边际（A股周期性行业波动更大）
         "terminal_growth_factor": 0.3, # 降低永续增长率
         "terminal_growth_cap": 0.02,   # 永续增长率上限 2%
         "use_maintenance_capex": True, # 只扣除维持性资本支出
@@ -82,7 +82,7 @@ HEAVY_INDUSTRY_PARAMS = {
 TECHNOLOGY_PARAMS = {
     "owner_earnings": {
         "required_return": 0.15,       # 提高要求回报率（高风险高回报）
-        "margin_of_safety": 0.20,      # 标准安全边际
+        "margin_of_safety": 0.22,      # 安全边际22%（A股科技股波动性大）
         "terminal_growth_factor": 0.5,
         "terminal_growth_cap": 0.05,   # 允许更高的永续增长率 5%
         "use_maintenance_capex": False, # 轻资产，全部扣除资本支出
@@ -117,9 +117,9 @@ FINANCE_PARAMS = {
 CONSUMER_PARAMS = {
     "owner_earnings": {
         "required_return": 0.11,
-        "margin_of_safety": 0.18,      # 降低安全边际（需求稳定）
+        "margin_of_safety": 0.20,      # 安全边际20%（A股消费股也需要适度安全边际）
         "terminal_growth_factor": 0.5,
-        "terminal_growth_cap": 0.04,
+        "terminal_growth_cap": 0.03,   # A股市场永续增长率上限3%
         "use_maintenance_capex": False,
         "maintenance_capex_ratio": 0.4,
         "use_declining_growth": False,  # 不使用递减增长率
@@ -127,7 +127,7 @@ CONSUMER_PARAMS = {
     "dcf": {
         "discount_rate": 0.09,
         "terminal_growth_factor": 0.5,
-        "terminal_growth_cap": 0.04,
+        "terminal_growth_cap": 0.03,   # A股市场永续增长率上限3%
     }
 }
 
@@ -135,7 +135,7 @@ CONSUMER_PARAMS = {
 HEALTHCARE_PARAMS = {
     "owner_earnings": {
         "required_return": 0.13,
-        "margin_of_safety": 0.20,
+        "margin_of_safety": 0.22,      # A股医药股波动性大，需要适度安全边际
         "terminal_growth_factor": 0.5,
         "terminal_growth_cap": 0.05,
         "use_maintenance_capex": False,
@@ -153,7 +153,7 @@ HEALTHCARE_PARAMS = {
 REAL_ESTATE_PARAMS = {
     "owner_earnings": {
         "required_return": 0.14,       # 高要求回报率（高杠杆风险）
-        "margin_of_safety": 0.30,      # 高安全边际（周期性、政策风险）
+        "margin_of_safety": 0.32,      # 高安全边际（A股房地产政策敏感性强，波动更大）
         "terminal_growth_factor": 0.3,
         "terminal_growth_cap": 0.02,
         "use_maintenance_capex": False,
@@ -189,9 +189,9 @@ MANUFACTURING_PARAMS = {
 SERVICES_PARAMS = {
     "owner_earnings": {
         "required_return": 0.13,
-        "margin_of_safety": 0.20,
+        "margin_of_safety": 0.22,      # A股服务业波动性较高
         "terminal_growth_factor": 0.4,
-        "terminal_growth_cap": 0.03,
+        "terminal_growth_cap": 0.025,   # A股市场永续增长率上限2.5%
         "use_maintenance_capex": False,
         "maintenance_capex_ratio": 0.3,
         "use_declining_growth": False,  # 不使用递减增长率

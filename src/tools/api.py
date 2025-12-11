@@ -322,21 +322,28 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
                     return 0.0
 
             # 计算 price_to_sales
-            market_cap = float(stock_data.get("总市值", 0))
-            revenue = float(latest_income.get("营业总收入", 0))
+            # 注意：market_cap 单位是亿元，revenue 单位是元（需要统一单位）
+            market_cap_yi = float(stock_data.get("总市值", 0))  # 市值（亿元）
+            revenue = float(latest_income.get("营业总收入", 0))  # 营收（元）
             
             # 如果从 Baostock 获取了 price_to_sales，直接使用
             if baostock_data and baostock_data.get("price_to_sales", 0) > 0:
                 price_to_sales = baostock_data["price_to_sales"]
-            # 否则尝试自己计算
-            elif market_cap > 0 and revenue > 0:
-                price_to_sales = market_cap / revenue
+            # 否则尝试自己计算（统一单位：都转换为元）
+            elif market_cap_yi > 0 and revenue > 0:
+                market_cap_yuan = market_cap_yi * 100_000_000  # 转换为元
+                price_to_sales = market_cap_yuan / revenue
+                logger.debug(f"计算P/S: 市值={market_cap_yi:.2f}亿(元)={market_cap_yuan:.0f}元, 营收={revenue:.0f}元, P/S={price_to_sales:.2f}")
             else:
                 price_to_sales = 0
+                if market_cap_yi <= 0:
+                    logger.warning("市值数据无效，无法计算P/S")
+                if revenue <= 0:
+                    logger.warning("营收数据无效，无法计算P/S")
             
             all_metrics = {
-                # 市场数据
-                "market_cap": market_cap,
+                # 市场数据（单位：亿元）
+                "market_cap": market_cap_yi,  # 使用统一的变量名
                 "float_market_cap": float(stock_data.get("流通市值", 0)),
 
                 # 盈利数据
@@ -881,12 +888,14 @@ def get_price_history(symbol: str, start_date: str = None, end_date: str = None,
 
         # 计算波动率指标
         # 1. 历史波动率 (20日)
+        # A股市场：每年交易日约240-250天，使用240进行年化（而不是252）
+        A_SHARE_TRADING_DAYS_PER_YEAR = 240
         returns = df["close"].pct_change()
         df["historical_volatility"] = returns.rolling(
-            window=20).std() * np.sqrt(252)  # 年化
+            window=20).std() * np.sqrt(A_SHARE_TRADING_DAYS_PER_YEAR)  # 年化（A股市场）
 
         # 2. 波动率区间 (相对于过去120天的波动率的位置)
-        volatility_120d = returns.rolling(window=120).std() * np.sqrt(252)
+        volatility_120d = returns.rolling(window=120).std() * np.sqrt(A_SHARE_TRADING_DAYS_PER_YEAR)
         vol_min = volatility_120d.rolling(window=120).min()
         vol_max = volatility_120d.rolling(window=120).max()
         vol_range = vol_max - vol_min
