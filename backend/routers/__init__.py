@@ -13,3 +13,5 @@ from . import agents
 from . import workflow
 from . import analysis
 from . import api_runs
+from . import reports
+from . import config

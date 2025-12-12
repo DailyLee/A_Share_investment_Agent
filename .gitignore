@@ -85,3 +85,5 @@ test/
 test*
 src/crawler/*.ts
 *.json
+# 但不要忽略前端项目的 JSON 文件
+!frontend/**/*.json
