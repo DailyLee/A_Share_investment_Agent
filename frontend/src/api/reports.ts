@@ -24,7 +24,7 @@ export interface ReportContentResponse {
 }
 
 const reportsClient = axios.create({
-  baseURL: '/reports',
+  baseURL: '/agent/reports',
   timeout: 10000,
 })
 

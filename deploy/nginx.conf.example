@@ -1,0 +1,136 @@
+# Nginx配置文件示例
+# 将此文件复制到服务器 /etc/nginx/conf.d/stock-scanner.conf
+# 并根据实际情况修改配置
+
+server {
+    listen 80;
+    server_name your-domain.com;  # 修改为你的域名或IP
+
+    # 前端静态文件 - 部署在 /agent 路径下
+    location /agent {
+        alias /opt/investment_agent/frontend/dist;  # 修改为实际的部署路径
+        index index.html;
+        try_files $uri $uri/ /agent/index.html;
+        
+        # 缓存静态资源
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+    
+    # 重定向根路径到 /agent
+    location = / {
+        return 301 /agent/;
+    }
+
+    # 后端API代理 - 新API（/api/*）
+    location /api {
+        proxy_pass http://127.0.0.1:8101;  # 修改为实际的后端端口
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # 报告API代理
+    location /reports {
+        proxy_pass http://127.0.0.1:8101;  # 修改为实际的后端端口
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # 日志API代理
+    location /logs {
+        proxy_pass http://127.0.0.1:8101;  # 修改为实际的后端端口
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # 运行历史API代理
+    location /runs {
+        proxy_pass http://127.0.0.1:8101;  # 修改为实际的后端端口
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # WebSocket支持（如果需要）
+    location /ws {
+        proxy_pass http://127.0.0.1:8101;  # 修改为实际的后端端口
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # 日志
+    access_log /var/log/nginx/stock-scanner-access.log;
+    error_log /var/log/nginx/stock-scanner-error.log;
+}
+
+# HTTPS配置（如果使用SSL证书）
+# server {
+#     listen 443 ssl http2;
+#     server_name your-domain.com;
+# 
+#     ssl_certificate /path/to/your/cert.pem;
+#     ssl_certificate_key /path/to/your/key.pem;
+# 
+#     # SSL配置
+#     ssl_protocols TLSv1.2 TLSv1.3;
+#     ssl_ciphers HIGH:!aNULL:!MD5;
+#     ssl_prefer_server_ciphers on;
+# 
+#     # 其他配置同上
+#     # 前端静态文件 - 部署在 /agent 路径下
+#     location /agent {
+#         alias /opt/investment_agent/frontend/dist;  # 修改为实际的部署路径
+#         index index.html;
+#         try_files $uri $uri/ /agent/index.html;
+#     }
+#     
+#     # 重定向根路径到 /agent
+#     location = / {
+#         return 301 /agent/;
+#     }
+# 
+#     location /api {
+#         proxy_pass http://127.0.0.1:8101;  # 修改为实际的后端端口
+#         # ... 同上
+#     }
+# }

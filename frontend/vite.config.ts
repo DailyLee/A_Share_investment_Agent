@@ -4,6 +4,7 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  base: '/agent/',  // 设置基础路径为 /agent/
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

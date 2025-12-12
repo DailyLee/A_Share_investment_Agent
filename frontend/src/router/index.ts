@@ -4,7 +4,7 @@ import History from '../views/History.vue'
 import Settings from '../views/Settings.vue'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory('/agent/'),  // 设置基础路径为 /agent/
   routes: [
     {
       path: '/',

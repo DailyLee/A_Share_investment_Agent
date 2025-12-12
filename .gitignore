@@ -87,3 +87,6 @@ src/crawler/*.ts
 *.json
 # 但不要忽略前端项目的 JSON 文件
 !frontend/**/*.json
+.deploy.env
+# 部署目录中的配置文件示例应该被提交
+!deploy/.deploy.env.example

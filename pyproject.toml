@@ -36,8 +36,18 @@ flake8 = "^6.1.0"
 
 
 [[tool.poetry.source]]
-name = "mirrors"
+name = "huawei"
 url = "https://repo.huaweicloud.com/repository/pypi/simple"
+priority = "primary"
+
+[[tool.poetry.source]]
+name = "tsinghua"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+priority = "supplemental"
+
+[[tool.poetry.source]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple"
 priority = "supplemental"
 
 [build-system]

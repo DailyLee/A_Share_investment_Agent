@@ -67,7 +67,7 @@ export interface LLMInteractionLog {
 
 export async function getLogs(runId: string, limit: number = 100): Promise<LLMInteractionLog[]> {
   // 日志接口不在 /api 前缀下，使用代理路径
-  const response = await axios.get<LLMInteractionLog[]>(`/logs/`, {
+  const response = await axios.get<LLMInteractionLog[]>(`/agent/logs/`, {
     params: {
       run_id: runId,
       limit: limit
