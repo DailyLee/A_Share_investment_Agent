@@ -63,7 +63,7 @@ def researcher_bull_agent(state: AgentState):
         )
         show_workflow_status("Bullish Researcher", "completed")
         return {
-            "messages": state["messages"] + [message],
+            "messages": [message],
             "data": state["data"],
             "metadata": state["metadata"],
         }
@@ -158,7 +158,7 @@ def researcher_bull_agent(state: AgentState):
 
     show_workflow_status("Bullish Researcher", "completed")
     return {
-        "messages": state["messages"] + [message],
+        "messages": [message],
         "data": state["data"],
         "metadata": state["metadata"],
     }

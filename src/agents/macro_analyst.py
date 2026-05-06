@@ -76,7 +76,7 @@ def macro_analyst_agent(state: AgentState):
     # logger.info(
     # f"--- DEBUG: macro_analyst_agent RETURN messages: {[msg.name for msg in (state['messages'] + [message])]} ---")
     return {
-        "messages": state["messages"] + [message],
+        "messages": [message],
         "data": {
             **data,
             "macro_analysis": message_content

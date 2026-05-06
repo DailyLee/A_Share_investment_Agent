@@ -259,7 +259,7 @@ def risk_management_agent(state: AgentState):
 
     show_workflow_status("Risk Manager", "completed")
     return {
-        "messages": state["messages"] + [message],
+        "messages": [message],
         "data": {
             **data,
             "risk_analysis": message_content

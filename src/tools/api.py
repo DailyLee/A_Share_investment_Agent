@@ -276,6 +276,16 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
                 "市净率": 0
             })
 
+        # Akshare 返回的总市值/流通市值单位是元，Baostock 返回的是亿元
+        # 统一转换为亿元
+        if not baostock_data:
+            stock_data = stock_data.copy()
+            for field in ["总市值", "流通市值"]:
+                raw_val = float(stock_data.get(field, 0))
+                if raw_val > 0:
+                    stock_data[field] = raw_val / 100_000_000
+                    logger.info(f"Akshare {field} 单位转换: {raw_val:.0f}元 -> {stock_data[field]:.2f}亿元")
+
         # 获取新浪财务指标
         logger.info("Fetching Sina financial indicators...")
         current_year = datetime.now().year
@@ -728,7 +738,7 @@ def get_market_data(symbol: str) -> Dict[str, Any]:
             return {
                 "stock_name": str(stock_data.get("名称", "")),
                 "industry": industry,
-                "market_cap": float(stock_data.get("总市值", 0)),
+                "market_cap": float(stock_data.get("总市值", 0)) / 100_000_000,
                 "volume": float(stock_data.get("成交量", 0)),
                 "average_volume": float(stock_data.get("成交量", 0)),
                 "fifty_two_week_high": float(stock_data.get("52周最高", 0)),

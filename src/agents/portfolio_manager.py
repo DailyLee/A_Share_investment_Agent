@@ -204,10 +204,8 @@ def portfolio_management_agent(state: AgentState):
     if missing_agents:
         logger.warning(f"⚠️ 缺少关键消息: {missing_agents}，portfolio_management_agent 可能被过早触发，跳过本次执行")
         logger.warning(f"当前消息列表: {[msg.name for msg in cleaned_messages_for_processing]}")
-        # 提前返回，不执行主要逻辑，避免重复打印报告
-        # 返回当前状态，等待所有输入都准备好
         return {
-            "messages": state["messages"],
+            "messages": [],
             "data": state["data"],
             "metadata": state["metadata"]
         }
@@ -465,15 +463,11 @@ def portfolio_management_agent(state: AgentState):
     # then the `cleaned_messages_for_processing` should become the new `state["messages"]` for this node's context.
     # However, for simplicity and robustness, let's assume its output `messages` should just be its own message added to the cleaned input it processed.
 
-    final_messages_output = cleaned_messages_for_processing + [final_decision_message]
-    # Alternative if we want to be super strict about adding to the raw incoming state["messages"]:
-    # final_messages_output = state["messages"] + [final_decision_message]
-    # But this ^ is prone to the duplication we are trying to solve if not careful.
-    # The most robust is that portfolio_manager provides its clear output, and the graph handles accumulation if needed for further steps (none in this case as it's END).
+    final_messages_output = [final_decision_message]
 
     logger.info(
         f"🔍 DEBUG: {agent_name} RETURN messages: {[msg.name for msg in final_messages_output]}")
-    logger.info(f"✅ DEBUG: {agent_name} 返回状态字典，包含 {len(final_messages_output)} 条消息")
+    logger.info(f"✅ DEBUG: {agent_name} 返回状态字典，包含 {len(final_messages_output)} 条新消息")
 
     return {
         "messages": final_messages_output,

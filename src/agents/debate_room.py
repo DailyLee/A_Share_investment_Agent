@@ -215,7 +215,7 @@ def debate_room_agent(state: AgentState):
     show_workflow_status("Debate Room", "completed")
     logger.info("辩论室分析完成")
     return {
-        "messages": state["messages"] + [message],
+        "messages": [message],
         "data": {
             **state["data"],
             "debate_analysis": message_content
