@@ -276,7 +276,9 @@ def portfolio_management_agent(state: AgentState):
     })
     risk_content = json.dumps({
         "signal": risk_data.get("trading_action", "error"),
-        "max_position_size": risk_data.get("max_position_size", 0),
+        "max_position_size_yuan": risk_data.get("max_position_size", 0),
+        "max_shares": risk_data.get("max_shares", 0),
+        "current_price": risk_data.get("current_price", 0),
         "risk_score": risk_data.get("risk_score", 0),
         "details": risk_data.get("details", "Risk message missing" if not risk_data else "Available")
     })
@@ -298,7 +300,8 @@ def portfolio_management_agent(state: AgentState):
             to risk management constraints.
 
             RISK MANAGEMENT CONSTRAINTS:
-            - You MUST NOT exceed the max_position_size specified by the risk manager
+            - You MUST NOT exceed the max_shares (in shares) specified by the risk manager
+            - max_position_size_yuan is the max position value in RMB; max_shares is already calculated as max_position_size_yuan / current_price, rounded down to nearest 100 (A-share lot size)
             - You MUST follow the trading_action (buy/sell/hold) recommended by risk management
             - These are hard constraints that cannot be overridden by other signals
 
@@ -346,7 +349,8 @@ def portfolio_management_agent(state: AgentState):
             - Only buy if you have available cash
             - Only sell if you have shares to sell
             - Quantity must be ≤ current position for sells
-            - Quantity must be ≤ max_position_size from risk management"""
+            - Quantity (in shares) must be ≤ max_shares from risk management
+            - Quantity must be a multiple of 100 (A-share lot size)"""
     system_message = {
         "role": "system",
         "content": system_message_content

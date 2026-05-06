@@ -96,7 +96,7 @@ TECHNOLOGY_PARAMS = {
     }
 }
 
-# 金融行业（银行、保险等）- 特殊估值逻辑
+# 金融行业（银行、保险等）- 使用 P/E + P/B 估值，不适用 DCF/所有者收益法
 FINANCE_PARAMS = {
     "owner_earnings": {
         "required_return": 0.11,
@@ -104,14 +104,68 @@ FINANCE_PARAMS = {
         "terminal_growth_factor": 0.4,
         "terminal_growth_cap": 0.03,
         "use_maintenance_capex": False,
-        "maintenance_capex_ratio": 0.2, # 金融行业资本支出较少
+        "maintenance_capex_ratio": 0.2,
     },
     "dcf": {
         "discount_rate": 0.09,
         "terminal_growth_factor": 0.4,
         "terminal_growth_cap": 0.03,
+    },
+    "pe_pb": {
+        "use_pe_pb": True,
+        "pe_weight": 0.5,
+        "pb_weight": 0.5,
     }
 }
+
+# 金融子行业的估值参考基准（A股市场）
+FINANCE_SUB_INDUSTRY = {
+    "bank": {
+        "keywords": ["银行"],
+        "target_pe_range": (5.0, 8.0),
+        "target_pb_range": (0.5, 0.8),
+        "pe_weight": 0.4,
+        "pb_weight": 0.6,   # 银行更看重净资产
+        "description": "银行",
+    },
+    "insurance": {
+        "keywords": ["保险"],
+        "target_pe_range": (8.0, 15.0),
+        "target_pb_range": (0.8, 1.5),
+        "pe_weight": 0.5,
+        "pb_weight": 0.5,
+        "description": "保险",
+    },
+    "brokerage": {
+        "keywords": ["证券", "券商"],
+        "target_pe_range": (15.0, 25.0),
+        "target_pb_range": (1.0, 2.0),
+        "pe_weight": 0.6,
+        "pb_weight": 0.4,   # 券商利润波动大，P/B更稳定但P/E也重要
+        "description": "证券",
+    },
+    "finance_default": {
+        "keywords": [],
+        "target_pe_range": (8.0, 15.0),
+        "target_pb_range": (0.8, 1.5),
+        "pe_weight": 0.5,
+        "pb_weight": 0.5,
+        "description": "综合金融",
+    },
+}
+
+
+def classify_finance_sub_industry(industry_name: str) -> dict:
+    """细分金融子行业，返回对应的估值参数"""
+    if not industry_name:
+        return FINANCE_SUB_INDUSTRY["finance_default"]
+    for sub_code, params in FINANCE_SUB_INDUSTRY.items():
+        if sub_code == "finance_default":
+            continue
+        for kw in params["keywords"]:
+            if kw in industry_name:
+                return params
+    return FINANCE_SUB_INDUSTRY["finance_default"]
 
 # 消费行业（食品饮料、零售等）- 稳定增长
 CONSUMER_PARAMS = {

@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage
 from src.utils.logging_config import setup_logger
 from src.agents.state import AgentState, show_agent_reasoning, show_workflow_status
 from src.utils.api_utils import agent_endpoint, log_llm_interaction
-from src.config.industry_valuation_params import get_valuation_params, get_industry_description, classify_industry
+from src.config.industry_valuation_params import get_valuation_params, get_industry_description, classify_industry, classify_finance_sub_industry
 from src.valuation.advanced_dcf import (
     calculate_wacc,
     estimate_growth_rates,
@@ -197,6 +197,228 @@ def extract_financial_data_from_state(data: dict) -> dict:
     }
 
 
+def handle_financial_company_valuation(state: AgentState, fin_data: dict, industry_code: str, market_cap: float, valuation_params: dict) -> AgentState:
+    """
+    金融行业专用估值：P/E + P/B 加权估值法
+
+    金融公司（银行、保险、证券）的财务结构与一般企业差异巨大：
+    - 没有传统 "营业总收入"，而是 已赚保费/利息净收入/手续费净收入 等
+    - 经营现金流受保费、贷款等影响，不适用 DCF/所有者收益法
+    - 行业通用的估值锚是 P/E 和 P/B
+    """
+    show_reasoning = state["metadata"]["show_reasoning"]
+    data = state["data"]
+    ticker = data["ticker"]
+    industry_name = data.get("industry", "")
+
+    sub_params = classify_finance_sub_industry(industry_name)
+    sub_desc = sub_params["description"]
+
+    pe_ratio = fin_data.get("pe_ratio", 0)
+    net_income = fin_data.get("net_income", 0)
+    earnings_growth = fin_data.get("earnings_growth", 0.05)
+
+    financial_metrics = data.get("financial_metrics", [{}])[0]
+    pb_ratio = financial_metrics.get("price_to_book", 0)
+
+    market_cap_yi = market_cap / 1e8
+
+    logger.info(f"\n{'='*60}")
+    logger.info(f"金融行业估值（P/E + P/B）: {ticker}")
+    logger.info(f"子行业: {sub_desc}")
+    logger.info(f"当前 P/E: {pe_ratio:.2f}, 当前 P/B: {pb_ratio:.2f}")
+    logger.info(f"净利润: ¥{net_income/1e8:.2f}亿, 利润增长率: {earnings_growth:.1%}")
+    logger.info(f"市值: ¥{market_cap_yi:.2f}亿")
+    logger.info(f"{'='*60}\n")
+
+    pe_low, pe_high = sub_params["target_pe_range"]
+    pb_low, pb_high = sub_params["target_pb_range"]
+    pe_weight = sub_params["pe_weight"]
+    pb_weight = sub_params["pb_weight"]
+
+    reasoning_parts = []
+    signals = []
+    intrinsic_values = []
+
+    # ========== P/E 估值 ==========
+    pe_signal = "neutral"
+    pe_intrinsic = 0
+    if pe_ratio > 0 and net_income > 0:
+        target_pe_mid = (pe_low + pe_high) / 2
+
+        # 根据增长率调整目标 P/E：高增长给予溢价，低增长给予折价
+        growth_adj = 1.0
+        if earnings_growth > 0.15:
+            growth_adj = min(1.3, 1.0 + (earnings_growth - 0.10) * 1.0)
+        elif earnings_growth < 0:
+            growth_adj = max(0.7, 1.0 + earnings_growth * 0.5)
+        adj_pe_mid = target_pe_mid * growth_adj
+        adj_pe_mid = max(pe_low * 0.8, min(adj_pe_mid, pe_high * 1.3))
+
+        pe_intrinsic = net_income * adj_pe_mid
+        pe_intrinsic_yi = pe_intrinsic / 1e8
+
+        pe_premium = (pe_ratio - adj_pe_mid) / adj_pe_mid
+
+        if pe_ratio < pe_low:
+            pe_signal = "bullish"
+        elif pe_ratio > pe_high:
+            pe_signal = "bearish"
+        else:
+            pe_signal = "neutral"
+
+        logger.info(f"📊 P/E 估值:")
+        logger.info(f"  当前P/E={pe_ratio:.2f}, 目标区间=[{pe_low:.1f}, {pe_high:.1f}], 增长调整后目标={adj_pe_mid:.2f}")
+        logger.info(f"  P/E内在价值 = ¥{pe_intrinsic_yi:.2f}亿, 信号={pe_signal}")
+
+        reasoning_parts.append(
+            f"P/E估值: 当前P/E={pe_ratio:.2f}, {sub_desc}行业目标区间=[{pe_low:.1f}, {pe_high:.1f}], "
+            f"增长率{earnings_growth:.1%}调整后目标P/E={adj_pe_mid:.2f}, "
+            f"P/E内在价值=¥{pe_intrinsic_yi:.2f}亿, 溢价率={pe_premium:.1%}, 信号={pe_signal}"
+        )
+    else:
+        logger.warning("P/E数据不可用（PE<=0 或净利润<=0），跳过P/E估值")
+        reasoning_parts.append("P/E数据不可用，跳过P/E估值")
+
+    # ========== P/B 估值 ==========
+    pb_signal = "neutral"
+    pb_intrinsic = 0
+    book_value = 0
+    if pb_ratio > 0 and market_cap > 0:
+        book_value = market_cap / pb_ratio
+        book_value_yi = book_value / 1e8
+        target_pb_mid = (pb_low + pb_high) / 2
+
+        roe = net_income / book_value if book_value > 0 and net_income > 0 else 0
+        pb_adj = 1.0
+        if roe > 0.15:
+            pb_adj = min(1.3, 1.0 + (roe - 0.10) * 2.0)
+        elif roe < 0.05 and roe > 0:
+            pb_adj = max(0.7, roe / 0.10)
+        adj_pb_mid = target_pb_mid * pb_adj
+        adj_pb_mid = max(pb_low * 0.8, min(adj_pb_mid, pb_high * 1.3))
+
+        pb_intrinsic = book_value * adj_pb_mid
+        pb_intrinsic_yi = pb_intrinsic / 1e8
+
+        pb_premium = (pb_ratio - adj_pb_mid) / adj_pb_mid
+
+        if pb_ratio < pb_low:
+            pb_signal = "bullish"
+        elif pb_ratio > pb_high:
+            pb_signal = "bearish"
+        else:
+            pb_signal = "neutral"
+
+        logger.info(f"📊 P/B 估值:")
+        logger.info(f"  净资产=¥{book_value_yi:.2f}亿, ROE={roe:.1%}")
+        logger.info(f"  当前P/B={pb_ratio:.2f}, 目标区间=[{pb_low:.1f}, {pb_high:.1f}], ROE调整后目标={adj_pb_mid:.2f}")
+        logger.info(f"  P/B内在价值 = ¥{pb_intrinsic_yi:.2f}亿, 信号={pb_signal}")
+
+        reasoning_parts.append(
+            f"P/B估值: 净资产=¥{book_value_yi:.2f}亿, ROE={roe:.1%}, "
+            f"当前P/B={pb_ratio:.2f}, {sub_desc}行业目标区间=[{pb_low:.1f}, {pb_high:.1f}], "
+            f"ROE调整后目标P/B={adj_pb_mid:.2f}, "
+            f"P/B内在价值=¥{pb_intrinsic_yi:.2f}亿, 溢价率={pb_premium:.1%}, 信号={pb_signal}"
+        )
+    else:
+        logger.warning("P/B数据不可用（PB<=0），跳过P/B估值")
+        reasoning_parts.append("P/B数据不可用，跳过P/B估值")
+
+    # ========== 加权综合估值 ==========
+    if pe_intrinsic > 0 and pb_intrinsic > 0:
+        intrinsic_value = pe_weight * pe_intrinsic + pb_weight * pb_intrinsic
+    elif pe_intrinsic > 0:
+        intrinsic_value = pe_intrinsic
+    elif pb_intrinsic > 0:
+        intrinsic_value = pb_intrinsic
+    else:
+        logger.warning("P/E和P/B均不可用，回退到传统估值方法")
+        return fallback_to_traditional_valuation(state)
+
+    intrinsic_value_yi = intrinsic_value / 1e8
+    gap = ((intrinsic_value - market_cap) / market_cap) * 100 if market_cap > 0 else 0
+
+    # 综合信号
+    signal_scores = {"bullish": 1, "neutral": 0, "bearish": -1}
+    signal_map = {pe_signal: pe_weight, pb_signal: pb_weight}
+    combined_score = sum(signal_scores.get(s, 0) * w for s, w in signal_map.items())
+
+    margin_of_safety = valuation_params.get("owner_earnings", {}).get("margin_of_safety", 0.20)
+
+    if gap > margin_of_safety * 100:
+        overall_signal = "bullish"
+    elif gap < -margin_of_safety * 100:
+        overall_signal = "bearish"
+    elif combined_score > 0.3:
+        overall_signal = "bullish"
+    elif combined_score < -0.3:
+        overall_signal = "bearish"
+    else:
+        overall_signal = "neutral"
+
+    confidence = "medium"
+    if pe_intrinsic > 0 and pb_intrinsic > 0:
+        pe_pb_diff = abs(pe_intrinsic - pb_intrinsic) / max(pe_intrinsic, pb_intrinsic)
+        if pe_pb_diff < 0.15:
+            confidence = "high"
+        elif pe_pb_diff > 0.40:
+            confidence = "low"
+
+    logger.info(f"\n📊 金融行业综合估值结果:")
+    logger.info(f"  加权内在价值 = ¥{intrinsic_value_yi:.2f}亿 (P/E权重={pe_weight}, P/B权重={pb_weight})")
+    logger.info(f"  当前市值 = ¥{market_cap_yi:.2f}亿")
+    logger.info(f"  估值差距 = {gap:+.1f}%")
+    logger.info(f"  信号: {overall_signal}, 置信度: {confidence}")
+
+    pe_gap = ((pe_intrinsic - market_cap) / market_cap * 100) if pe_intrinsic > 0 and market_cap > 0 else 0
+    pb_gap = ((pb_intrinsic - market_cap) / market_cap * 100) if pb_intrinsic > 0 and market_cap > 0 else 0
+
+    confidence_value = abs(gap) / 100.0
+    confidence_pct = f"{confidence_value:.0%}"
+
+    reasoning = {
+        "valuation_method": "Finance P/E + P/B",
+        "sub_industry": sub_desc,
+        "pe_analysis": {
+            "signal": pe_signal,
+            "details": (f"P/E估值: ¥{pe_intrinsic/1e8:.2f}亿, 市值: ¥{market_cap_yi:.2f}亿, 差距: {pe_gap:+.1f}%"
+                        if pe_intrinsic > 0 else "P/E估值不可用"),
+            "current_pe": pe_ratio,
+        },
+        "pb_analysis": {
+            "signal": pb_signal,
+            "details": (f"P/B估值: ¥{pb_intrinsic/1e8:.2f}亿, 市值: ¥{market_cap_yi:.2f}亿, 差距: {pb_gap:+.1f}%"
+                        if pb_intrinsic > 0 else "P/B估值不可用"),
+            "current_pb": pb_ratio,
+        },
+        "combined_valuation": {
+            "intrinsic_value": f"¥{intrinsic_value_yi:.2f}亿",
+            "market_cap": f"¥{market_cap_yi:.2f}亿",
+            "combined_gap": f"{gap:+.1f}%",
+            "pe_weight": pe_weight,
+            "pb_weight": pb_weight,
+        },
+        "reasoning_text": "\n".join(reasoning_parts),
+    }
+
+    message_content = {
+        "signal": overall_signal,
+        "confidence": confidence_pct,
+        "reasoning": reasoning,
+    }
+
+    if show_reasoning:
+        show_agent_reasoning(message_content, "改进估值分析 V2 (金融行业P/E+P/B)")
+
+    message = HumanMessage(
+        content=json.dumps(message_content, ensure_ascii=False),
+        name="valuation_agent_v2",
+    )
+
+    return {"messages": [message], "data": data}
+
+
 @agent_endpoint("valuation_v2", "改进的估值分析师，使用三阶段DCF和所有者收益法评估公司内在价值")
 def valuation_agent_v2(state: AgentState):
     """
@@ -234,6 +456,11 @@ def valuation_agent_v2(state: AgentState):
     try:
         # 从state中提取财务数据
         fin_data = extract_financial_data_from_state(data)
+        
+        # 金融行业优先使用 P/E + P/B 估值法
+        if industry_code == "finance":
+            logger.info("检测到金融行业，使用 P/E + P/B 加权估值法（DCF/所有者收益法不适用于金融公司）")
+            return handle_financial_company_valuation(state, fin_data, industry_code, market_cap, valuation_params)
         
         # 使用综合指标识别成长型公司
         growth_check = identify_growth_company(fin_data, industry_code, market_cap)

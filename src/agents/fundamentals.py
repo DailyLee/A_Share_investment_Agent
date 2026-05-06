@@ -1,10 +1,24 @@
+import math
 from langchain_core.messages import HumanMessage
 from src.utils.logging_config import setup_logger
 
 from src.agents.state import AgentState, show_agent_reasoning, show_workflow_status
 from src.utils.api_utils import agent_endpoint, log_llm_interaction
+from src.config.industry_valuation_params import classify_industry
 
 import json
+
+
+def _safe_val(v, default=0):
+    """将 nan/None 转换为 default，避免 nan 参与比较"""
+    if v is None:
+        return default
+    try:
+        if math.isnan(v):
+            return default
+    except TypeError:
+        pass
+    return v
 
 # 初始化 logger
 logger = setup_logger('fundamentals_agent')
@@ -48,108 +62,148 @@ def fundamentals_agent(state: AgentState):
     signals = []
     reasoning = {}
 
+    # 检测是否为金融行业
+    industry_name = data.get("industry", "")
+    industry_code = classify_industry(industry_name)
+    is_finance = (industry_code == "finance")
+
     # 1. Profitability Analysis
-    # 基于A股市场特点优化阈值
-    # A股市场特点：整体盈利能力低于成熟市场，ROE和利润率通常较低
-    return_on_equity = metrics.get("return_on_equity", 0)
-    net_margin = metrics.get("net_margin", 0)
-    operating_margin = metrics.get("operating_margin", 0)
+    return_on_equity = _safe_val(metrics.get("return_on_equity"))
+    net_margin = _safe_val(metrics.get("net_margin"))
+    operating_margin = _safe_val(metrics.get("operating_margin"))
 
-    # A股市场阈值（更符合实际情况）
-    thresholds = [
-        (return_on_equity, 0.12),  # A股市场ROE > 12%就算不错（从15%降低到12%）
-        (net_margin, 0.10),  # A股市场净利润率 > 10%就算不错（从20%降低到10%）
-        (operating_margin, 0.08)  # A股市场营业利润率 > 8%就算不错（从15%降低到8%）
-    ]
-    profitability_score = sum(
-        metric is not None and metric > threshold
-        for metric, threshold in thresholds
-    )
+    if is_finance:
+        # 金融公司：net_margin/operating_margin 通常为 nan，用 P/E 和 P/B 辅助判断
+        # ROE 已在数据源层面做了年化处理（使用上年年报ROE或简单年化）
+        pe_ratio_val = _safe_val(metrics.get("pe_ratio"))
+        pb_ratio_val = _safe_val(metrics.get("price_to_book"))
 
-    signals.append('bullish' if profitability_score >=
-                   2 else 'bearish' if profitability_score == 0 else 'neutral')
-    # 检查是否有任何财务数据
-    has_data = any(metrics.get(key) is not None for key in ['return_on_equity', 'net_margin', 'operating_margin'])
-    
-    reasoning["profitability_signal"] = {
-        "signal": signals[0],
-        "details": (
-            f"ROE: {metrics.get('return_on_equity', 0):.2%}" if metrics.get(
-                "return_on_equity") is not None else "ROE: N/A"
-        ) + ", " + (
-            f"Net Margin: {metrics.get('net_margin', 0):.2%}" if metrics.get(
-                "net_margin") is not None else "Net Margin: N/A"
-        ) + ", " + (
-            f"Op Margin: {metrics.get('operating_margin', 0):.2%}" if metrics.get(
-                "operating_margin") is not None else "Op Margin: N/A"
-        ) + (" (数据获取失败，请检查 API 连接)" if not has_data else "")
-    }
+        profitability_score = 0
+        if return_on_equity > 0.10:
+            profitability_score += 1
+        if return_on_equity > 0.15:
+            profitability_score += 1
+        if 0 < pe_ratio_val < 20:
+            profitability_score += 1
+
+        signals.append('bullish' if profitability_score >= 2 else 'bearish' if profitability_score == 0 else 'neutral')
+        reasoning["profitability_signal"] = {
+            "signal": signals[0],
+            "details": f"ROE: {return_on_equity:.2%}, P/E: {pe_ratio_val:.2f}, P/B: {pb_ratio_val:.2f} (金融行业)"
+        }
+    else:
+        thresholds = [
+            (return_on_equity, 0.12),
+            (net_margin, 0.10),
+            (operating_margin, 0.08)
+        ]
+        profitability_score = sum(
+            metric is not None and metric > threshold
+            for metric, threshold in thresholds
+        )
+
+        signals.append('bullish' if profitability_score >=
+                       2 else 'bearish' if profitability_score == 0 else 'neutral')
+        has_data = any(metrics.get(key) is not None for key in ['return_on_equity', 'net_margin', 'operating_margin'])
+
+        reasoning["profitability_signal"] = {
+            "signal": signals[0],
+            "details": (
+                f"ROE: {return_on_equity:.2%}" if return_on_equity else "ROE: N/A"
+            ) + ", " + (
+                f"Net Margin: {net_margin:.2%}" if net_margin else "Net Margin: N/A"
+            ) + ", " + (
+                f"Op Margin: {operating_margin:.2%}" if operating_margin else "Op Margin: N/A"
+            ) + (" (数据获取失败，请检查 API 连接)" if not has_data else "")
+        }
 
     # 2. Growth Analysis
-    # 基于A股市场特点：增长指标阈值保持10%合理（A股市场增长波动性大）
-    revenue_growth = metrics.get("revenue_growth", 0)
-    earnings_growth = metrics.get("earnings_growth", 0)
-    book_value_growth = metrics.get("book_value_growth", 0)
+    revenue_growth = _safe_val(metrics.get("revenue_growth"))
+    earnings_growth = _safe_val(metrics.get("earnings_growth"))
+    book_value_growth = _safe_val(metrics.get("book_value_growth"))
 
-    thresholds = [
-        (revenue_growth, 0.10),  # 10% revenue growth（A股市场合理阈值）
-        (earnings_growth, 0.10),  # 10% earnings growth（A股市场合理阈值）
-        (book_value_growth, 0.10)  # 10% book value growth（A股市场合理阈值）
-    ]
-    growth_score = sum(
-        metric is not None and metric > threshold
-        for metric, threshold in thresholds
-    )
+    if is_finance:
+        # 金融公司 revenue_growth 通常为 nan，以 earnings_growth 和 book_value_growth 为主
+        growth_score = 0
+        if earnings_growth > 0.10:
+            growth_score += 1
+        if book_value_growth > 0.08:
+            growth_score += 1
+        if earnings_growth > 0:
+            growth_score += 1
 
-    signals.append('bullish' if growth_score >=
-                   2 else 'bearish' if growth_score == 0 else 'neutral')
-    has_growth_data = any(metrics.get(key) is not None for key in ['revenue_growth', 'earnings_growth'])
-    
-    reasoning["growth_signal"] = {
-        "signal": signals[1],
-        "details": (
-            f"Revenue Growth: {metrics.get('revenue_growth', 0):.2%}" if metrics.get(
-                "revenue_growth") is not None else "Revenue Growth: N/A"
-        ) + ", " + (
-            f"Earnings Growth: {metrics.get('earnings_growth', 0):.2%}" if metrics.get(
-                "earnings_growth") is not None else "Earnings Growth: N/A"
-        ) + (" (数据获取失败，请检查 API 连接)" if not has_growth_data else "")
-    }
+        signals.append('bullish' if growth_score >= 2 else 'bearish' if growth_score == 0 else 'neutral')
+        reasoning["growth_signal"] = {
+            "signal": signals[1],
+            "details": f"Earnings Growth: {earnings_growth:.2%}, Book Value Growth: {book_value_growth:.2%} (金融行业)"
+        }
+    else:
+        thresholds = [
+            (revenue_growth, 0.10),
+            (earnings_growth, 0.10),
+            (book_value_growth, 0.10)
+        ]
+        growth_score = sum(
+            metric is not None and metric > threshold
+            for metric, threshold in thresholds
+        )
+
+        signals.append('bullish' if growth_score >=
+                       2 else 'bearish' if growth_score == 0 else 'neutral')
+        has_growth_data = any(metrics.get(key) is not None for key in ['revenue_growth', 'earnings_growth'])
+
+        reasoning["growth_signal"] = {
+            "signal": signals[1],
+            "details": (
+                f"Revenue Growth: {revenue_growth:.2%}" if revenue_growth else "Revenue Growth: N/A"
+            ) + ", " + (
+                f"Earnings Growth: {earnings_growth:.2%}" if earnings_growth else "Earnings Growth: N/A"
+            ) + (" (数据获取失败，请检查 API 连接)" if not has_growth_data else "")
+        }
 
     # 3. Financial Health
-    # 基于A股市场特点优化财务健康指标
-    current_ratio = metrics.get("current_ratio", 0)
-    debt_to_equity = metrics.get("debt_to_equity", 0)  # 注意：这里实际是资产负债率（0-1之间）
-    free_cash_flow_per_share = metrics.get("free_cash_flow_per_share", 0)
-    earnings_per_share = metrics.get("earnings_per_share", 0)
+    current_ratio = _safe_val(metrics.get("current_ratio"))
+    debt_to_equity = _safe_val(metrics.get("debt_to_equity"))
+    free_cash_flow_per_share = _safe_val(metrics.get("free_cash_flow_per_share"))
+    earnings_per_share = _safe_val(metrics.get("earnings_per_share"))
 
-    health_score = 0
-    # A股市场：流动比率 > 1.2 就算不错（从1.5降低到1.2，更符合A股实际情况）
-    if current_ratio and current_ratio > 1.2:  # Good liquidity
-        health_score += 1
-    # A股市场：资产负债率 < 60% 就算不错（从50%提高到60%，A股公司杠杆通常较高）
-    # 注意：debt_to_equity 实际存储的是资产负债率（百分比转小数），所以 < 0.6 表示 < 60%
-    if debt_to_equity and debt_to_equity < 0.6:  # Reasonable debt levels for A-share market
-        health_score += 1
-    # A股市场：自由现金流/每股收益 > 0.6 就算不错（从0.8降低到0.6，更符合A股实际情况）
-    if (free_cash_flow_per_share and earnings_per_share and
-            free_cash_flow_per_share > earnings_per_share * 0.6):  # Good FCF conversion
-        health_score += 1
+    if is_finance:
+        # 金融公司：高杠杆是常态，不适用传统流动比率和资产负债率标准
+        health_score = 0
+        if debt_to_equity > 0 and debt_to_equity < 0.95:
+            health_score += 1
+        if earnings_per_share and earnings_per_share > 0:
+            health_score += 1
+        if book_value_growth > 0:
+            health_score += 1
 
-    signals.append('bullish' if health_score >=
-                   2 else 'bearish' if health_score == 0 else 'neutral')
-    has_health_data = any(metrics.get(key) is not None for key in ['current_ratio', 'debt_to_equity'])
-    
-    reasoning["financial_health_signal"] = {
-        "signal": signals[2],
-        "details": (
-            f"Current Ratio: {metrics.get('current_ratio', 0):.2f}" if metrics.get(
-                "current_ratio") is not None else "Current Ratio: N/A"
-        ) + ", " + (
-            f"D/E: {metrics.get('debt_to_equity', 0):.2f}" if metrics.get(
-                "debt_to_equity") is not None else "D/E: N/A"
-        ) + (" (数据获取失败，请检查 API 连接)" if not has_health_data else "")
-    }
+        signals.append('bullish' if health_score >= 2 else 'bearish' if health_score == 0 else 'neutral')
+        reasoning["financial_health_signal"] = {
+            "signal": signals[2],
+            "details": f"D/E: {debt_to_equity:.2f}, EPS: {earnings_per_share:.2f}, BV Growth: {book_value_growth:.2%} (金融行业)"
+        }
+    else:
+        health_score = 0
+        if current_ratio and current_ratio > 1.2:
+            health_score += 1
+        if debt_to_equity and debt_to_equity < 0.6:
+            health_score += 1
+        if (free_cash_flow_per_share and earnings_per_share and
+                free_cash_flow_per_share > earnings_per_share * 0.6):
+            health_score += 1
+
+        signals.append('bullish' if health_score >=
+                       2 else 'bearish' if health_score == 0 else 'neutral')
+        has_health_data = any(metrics.get(key) is not None for key in ['current_ratio', 'debt_to_equity'])
+
+        reasoning["financial_health_signal"] = {
+            "signal": signals[2],
+            "details": (
+                f"Current Ratio: {current_ratio:.2f}" if current_ratio else "Current Ratio: N/A"
+            ) + ", " + (
+                f"D/E: {debt_to_equity:.2f}" if debt_to_equity else "D/E: N/A"
+            ) + (" (数据获取失败，请检查 API 连接)" if not has_health_data else "")
+        }
 
     # 4. Price to X ratios
     # 基于A股市场特点优化估值比率阈值

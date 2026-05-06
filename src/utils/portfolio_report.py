@@ -287,6 +287,20 @@ def format_decision(action: str, quantity: int, confidence: float, agent_signals
             # 统一格式：每行3个空格 + "- " + 内容
             return f"   - {dcf_display}\n   - {oe_display}\n   - 营收估值法: {revenue_details}\n   - 综合估值差距: {combined_gap}"
         
+        # 金融行业 P/E + P/B 估值法
+        if 'P/E + P/B' in valuation_method or 'finance_pe_pb' in valuation_method:
+            pe_details = reasoning.get('pe_analysis', {}).get('details', '无数据')
+            pb_details = reasoning.get('pb_analysis', {}).get('details', '无数据')
+            combined_info = reasoning.get('combined_valuation', {})
+            combined_gap = combined_info.get('combined_gap', 'N/A')
+            sub_industry = reasoning.get('sub_industry', '金融')
+            pe_weight = combined_info.get('pe_weight', 0.5)
+            pb_weight = combined_info.get('pb_weight', 0.5)
+            return (f"   - {pe_details} (权重{pe_weight:.0%})\n"
+                    f"   - {pb_details} (权重{pb_weight:.0%})\n"
+                    f"   - 综合估值差距: {combined_gap}\n"
+                    f"   - 估值方法: 金融行业P/E+P/B ({sub_industry})")
+
         # 检查是否为基于营收的估值（未盈利成长型公司）
         if 'Revenue-Based' in valuation_method or company_type.startswith('Growth'):
             revenue_analysis = reasoning.get('revenue_based_analysis', {})
@@ -511,8 +525,17 @@ def generate_portfolio_report(final_state: Dict[str, Any], show_reasoning: bool 
         # 生成并保存 Markdown 文件
         ticker = final_state.get("data", {}).get("ticker", "UNKNOWN")
         stock_name = final_state.get("data", {}).get("stock_name", "")
+        if not stock_name:
+            try:
+                import akshare as ak
+                spot = ak.stock_zh_a_spot_em()
+                row = spot[spot['代码'] == ticker]
+                if not row.empty:
+                    stock_name = str(row.iloc[0].get('名称', ''))
+            except Exception:
+                pass
         current_date = datetime.now().strftime("%Y%m%d")
-        report_filename = f"{ticker}_{current_date}.md"
+        report_filename = f"{current_date}-{ticker}-{stock_name}.md" if stock_name else f"{current_date}-{ticker}.md"
         
         # 获取项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

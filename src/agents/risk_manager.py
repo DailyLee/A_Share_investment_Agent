@@ -224,8 +224,22 @@ def risk_management_agent(state: AgentState):
         else:
             trading_action = "hold"
 
+    # 计算最大可买股数（A股最小交易单位为100股/1手）
+    current_price = 0.0
+    try:
+        if prices_df is not None and not prices_df.empty:
+            current_price = float(prices_df['close'].iloc[-1])
+    except Exception:
+        pass
+    if current_price > 0:
+        max_shares = int(max_position_size / current_price / 100) * 100
+    else:
+        max_shares = 0
+
     message_content = {
         "max_position_size": float(max_position_size),
+        "max_shares": max_shares,
+        "current_price": current_price,
         "risk_score": risk_score,
         "trading_action": trading_action,
         "risk_metrics": {

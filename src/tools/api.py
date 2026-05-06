@@ -334,7 +334,9 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
             # 计算 price_to_sales
             # 注意：market_cap 单位是亿元，revenue 单位是元（需要统一单位）
             market_cap_yi = float(stock_data.get("总市值", 0))  # 市值（亿元）
-            raw_revenue = float(latest_income.get("营业总收入", 0))  # 营收（元，可能是季报累计值）
+            raw_revenue = float(latest_income.get("营业总收入", 0) or 0)
+            if raw_revenue == 0:
+                raw_revenue = float(latest_income.get("营业收入", 0) or 0)
 
             # 年化营收：优先使用TTM，回退到简单年化
             income_annualize_factor, income_report_period = _get_annualization_factor(
@@ -392,10 +394,10 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
                 "market_cap": market_cap_yi,  # 使用统一的变量名
                 "float_market_cap": float(stock_data.get("流通市值", 0)),
 
-                # 盈利数据
+                # 盈利数据 — ROE 滚动年化处理
                 "revenue": revenue,
                 "net_income": float(latest_income.get("净利润", 0)),
-                "return_on_equity": convert_percentage(latest_financial.get("净资产收益率(%)", 0)),
+                "return_on_equity": _get_annualized_roe(financial_data, latest_financial),
                 "net_margin": convert_percentage(latest_financial.get("销售净利率(%)", 0)),
                 "operating_margin": convert_percentage(latest_financial.get("营业利润率(%)", 0)),
 
@@ -466,6 +468,55 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
         return [{}]
 
 
+def _get_annualized_roe(financial_data, latest_financial) -> float:
+    """获取年化ROE：如果最新报告是季报，则使用上年年报ROE或TTM估算
+
+    逻辑：
+    1. 年报 → 直接使用
+    2. 季报 → 先找上年年报ROE；若不可用则用简单年化（Q1×4, H1×2, Q3×4/3）
+    """
+    import math
+    latest_date = latest_financial.get('日期', None)
+    latest_roe = None
+    try:
+        latest_roe = float(latest_financial.get("净资产收益率(%)", 0)) / 100.0
+    except (ValueError, TypeError):
+        latest_roe = 0.0
+    if latest_roe is None or (isinstance(latest_roe, float) and math.isnan(latest_roe)):
+        latest_roe = 0.0
+
+    if latest_date is None:
+        return latest_roe
+
+    try:
+        latest_date = pd.to_datetime(latest_date)
+    except Exception:
+        return latest_roe
+
+    if latest_date.month == 12:
+        logger.info(f"📊 ROE: 使用年报值 {latest_roe:.2%}")
+        return latest_roe
+
+    # 季报：先尝试找上年年报ROE
+    for _, row in financial_data.iterrows():
+        try:
+            row_date = pd.to_datetime(row.get('日期', None))
+            if row_date and row_date.month == 12 and row_date.year == latest_date.year - 1:
+                fy_roe = float(row.get("净资产收益率(%)", 0)) / 100.0
+                if not math.isnan(fy_roe) and fy_roe != 0:
+                    logger.info(f"📊 ROE 年化: 使用上年年报ROE={fy_roe:.2%} (最新{latest_date.month}月报ROE={latest_roe:.2%})")
+                    return fy_roe
+        except Exception:
+            continue
+
+    # 上年年报不可用，简单年化
+    factor_map = {3: 4.0, 6: 2.0, 9: 4.0 / 3.0}
+    factor = factor_map.get(latest_date.month, 1.0)
+    annualized = latest_roe * factor
+    logger.info(f"📊 ROE 年化: {latest_roe:.2%} × {factor:.1f} = {annualized:.2%}")
+    return annualized
+
+
 def _get_annualization_factor(report_date_str) -> tuple:
     """根据报告日期判断是哪个季度，返回(年化因子, 报告期描述)
 
@@ -522,9 +573,18 @@ def _get_field_value(row, field_name: str) -> float:
     if row is None:
         return 0.0
     try:
-        return float(row.get(field_name, 0))
+        val = float(row.get(field_name, 0))
+        if val != 0:
+            return val
     except (ValueError, TypeError):
-        return 0.0
+        pass
+    # 金融公司使用 "营业收入" 而非 "营业总收入"
+    if field_name == "营业总收入":
+        try:
+            return float(row.get("营业收入", 0))
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
 
 
 def get_financial_statements(symbol: str) -> Dict[str, Any]:
@@ -1238,6 +1298,65 @@ def get_price_history(symbol: str, start_date: str = None, end_date: str = None,
 
     except Exception as e:
         logger.error(f"Error getting price history: {e}")
+        logger.info("尝试使用 Baostock 获取价格历史...")
+        try:
+            import baostock as bs
+            bs.login()
+            prefix = "sh" if symbol.startswith("6") else "sz"
+            bs_code = f"{prefix}.{symbol}"
+            rs = bs.query_history_k_data_plus(
+                bs_code,
+                "date,open,high,low,close,volume,amount",
+                start_date=start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date,
+                end_date=end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date,
+                frequency="d",
+                adjustflag="2",  # 前复权
+            )
+            rows = []
+            while rs.error_code == '0' and rs.next():
+                rows.append(rs.get_row_data())
+            bs.logout()
+
+            if rows:
+                df = pd.DataFrame(rows, columns=rs.fields)
+                for col in ["open", "high", "low", "close", "volume", "amount"]:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.dropna(subset=["close"])
+                if not df.empty:
+                    returns = df["close"].pct_change()
+                    df["pct_change"] = returns * 100
+                    df["change_amount"] = df["close"].diff()
+                    df["amplitude"] = ((df["high"] - df["low"]) / df["close"].shift(1) * 100).fillna(0)
+                    df["turnover"] = 0.0
+                    df["momentum_1m"] = df["close"].pct_change(periods=20)
+                    df["momentum_3m"] = df["close"].pct_change(periods=60)
+                    df["momentum_6m"] = df["close"].pct_change(periods=120)
+                    df["volume_momentum"] = df["volume"].pct_change(periods=20)
+                    df["historical_volatility"] = returns.rolling(window=20).std() * np.sqrt(252)
+                    vol_mean = df["historical_volatility"].rolling(window=60).mean()
+                    vol_std = df["historical_volatility"].rolling(window=60).std()
+                    df["volatility_z_score"] = (df["historical_volatility"] - vol_mean) / vol_std.replace(0, np.nan)
+                    df["volatility_regime"] = pd.cut(
+                        df["historical_volatility"],
+                        bins=[0, 0.15, 0.25, 0.40, float("inf")],
+                        labels=["low", "normal", "high", "extreme"],
+                    )
+                    tr = pd.concat([
+                        df["high"] - df["low"],
+                        (df["high"] - df["close"].shift(1)).abs(),
+                        (df["low"] - df["close"].shift(1)).abs(),
+                    ], axis=1).max(axis=1)
+                    atr = tr.rolling(window=14).mean()
+                    df["atr_ratio"] = atr / df["close"]
+                    df["hurst_exponent"] = np.nan
+                    df["skewness"] = returns.rolling(window=20).skew()
+                    df["kurtosis"] = returns.rolling(window=20).kurt()
+                    df = df.sort_values("date").reset_index(drop=True)
+                    logger.info(f"✓ Baostock 价格历史获取成功 ({len(df)} 条记录)")
+                    return df
+        except Exception as e2:
+            logger.error(f"Baostock 价格历史也失败: {e2}")
         return pd.DataFrame()
 
 

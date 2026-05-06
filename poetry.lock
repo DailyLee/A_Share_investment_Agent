@@ -12,6 +12,11 @@ files = [
     {file = "aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "aiohttp"
 version = "3.12.12"
@@ -121,6 +126,11 @@ yarl = ">=1.17.0,<2.0"
 [package.extras]
 speedups = ["Brotli ; platform_python_implementation == \"CPython\"", "aiodns (>=3.3.0)", "brotlicffi ; platform_python_implementation != \"CPython\""]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "aiosignal"
 version = "1.3.2"
@@ -136,6 +146,11 @@ files = [
 [package.dependencies]
 frozenlist = ">=1.1.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "akracer"
 version = "0.0.13"
@@ -148,6 +163,11 @@ files = [
     {file = "akracer-0.0.13-py3-none-any.whl", hash = "sha256:55bd04c69e35130994d26795f00183e0c33d4e237f7ebfa35074a760c30209d1"},
     {file = "akracer-0.0.13.tar.gz", hash = "sha256:8ab67dabda34f38604d037f2cac67078d253d8c4c316ffe0d80d27ed03cdbb5e"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "akshare"
@@ -184,6 +204,11 @@ xlrd = ">=1.2.0"
 full = ["akqmt"]
 qmt = ["akqmt"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
@@ -195,6 +220,11 @@ files = [
     {file = "annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53"},
     {file = "annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "anyio"
@@ -219,6 +249,11 @@ doc = ["Sphinx (>=8.2,<9.0)", "packaging", "sphinx-autodoc-typehints (>=1.2.0)",
 test = ["anyio[trio]", "blockbuster (>=1.5.23)", "coverage[toml] (>=7)", "exceptiongroup (>=1.2.0)", "hypothesis (>=4.0)", "psutil (>=5.9)", "pytest (>=7.0)", "trustme", "truststore (>=0.9.1) ; python_version >= \"3.10\"", "uvloop (>=0.21) ; platform_python_implementation == \"CPython\" and platform_system != \"Windows\" and python_version < \"3.14\""]
 trio = ["trio (>=0.26.1)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "async-timeout"
 version = "4.0.3"
@@ -231,6 +266,11 @@ files = [
     {file = "async-timeout-4.0.3.tar.gz", hash = "sha256:4640d96be84d82d02ed59ea2b7105a0f7b33abe8703703cd0ab0bf87c427522f"},
     {file = "async_timeout-4.0.3-py3-none-any.whl", hash = "sha256:7405140ff1230c310e51dc27b3145b9092d659ce68ff733fb0cefe3ee42be028"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "attrs"
@@ -252,6 +292,11 @@ docs = ["cogapp", "furo", "myst-parser", "sphinx", "sphinx-notfound-page", "sphi
 tests = ["cloudpickle ; platform_python_implementation == \"CPython\"", "hypothesis", "mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pympler", "pytest (>=4.3.0)", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-xdist[psutil]"]
 tests-mypy = ["mypy (>=1.11.1) ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\"", "pytest-mypy-plugins ; platform_python_implementation == \"CPython\" and python_version >= \"3.10\""]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "backoff"
 version = "2.2.1"
@@ -264,20 +309,30 @@ files = [
     {file = "backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "baostock"
-version = "0.8.9"
+version = "0.9.1"
 description = "A tool for obtaining historical data of China stock market"
 optional = false
 python-versions = "*"
 groups = ["main"]
 files = [
-    {file = "baostock-0.8.9-py3-none-any.whl", hash = "sha256:7a51fb30cd6b4325f5517198e350dc2fffaaab2923cd132b9f747b8b73ae7303"},
-    {file = "baostock-0.8.9.tar.gz", hash = "sha256:8169cdbed14fa442ace63c59549bef3f92b0c3dd1df9e5d9069f7bd04a76b0da"},
+    {file = "baostock-0.9.1-py3-none-any.whl", hash = "sha256:a30749f095fd58ecd7ba3799dad605d355ad8e6d19310bc437039e1e526f15fe"},
+    {file = "baostock-0.9.1.tar.gz", hash = "sha256:5ec3a44cbec9471872b0a4ae02c39aea29db688bb740b769167393bc6e244a39"},
 ]
 
 [package.dependencies]
 pandas = ">=0.18.0"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "beautifulsoup4"
@@ -301,6 +356,11 @@ chardet = ["chardet"]
 charset-normalizer = ["charset-normalizer"]
 html5lib = ["html5lib"]
 lxml = ["lxml"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "black"
@@ -349,6 +409,11 @@ d = ["aiohttp (>=3.7.4) ; sys_platform != \"win32\" or implementation_name != \"
 jupyter = ["ipython (>=7.8.0)", "tokenize-rt (>=3.2.0)"]
 uvloop = ["uvloop (>=0.15.2)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "cachetools"
 version = "5.5.2"
@@ -361,6 +426,11 @@ files = [
     {file = "cachetools-5.5.2.tar.gz", hash = "sha256:1a661caa9175d26759571b2e19580f9d6393969e5dfca11fdb1f947a23e640d4"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "certifi"
 version = "2025.4.26"
@@ -372,6 +442,11 @@ files = [
     {file = "certifi-2025.4.26-py3-none-any.whl", hash = "sha256:30350364dfe371162649852c63336a15c70c6510c2ad5015b21c2345311805f3"},
     {file = "certifi-2025.4.26.tar.gz", hash = "sha256:0a816057ea3cdefcef70270d2c515e4506bbc954f417fa5ade2021213bb8f0c6"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "cffi"
@@ -452,6 +527,11 @@ files = [
 
 [package.dependencies]
 pycparser = "*"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "charset-normalizer"
@@ -555,6 +635,11 @@ files = [
     {file = "charset_normalizer-3.4.2.tar.gz", hash = "sha256:5baececa9ecba31eff645232d59845c07aa030f0c81ee70184a90d35099a0e63"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "click"
 version = "8.1.8"
@@ -570,6 +655,11 @@ files = [
 [package.dependencies]
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "colorama"
 version = "0.4.6"
@@ -582,6 +672,11 @@ files = [
     {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
 ]
 markers = {main = "platform_system == \"Windows\"", dev = "platform_system == \"Windows\" or sys_platform == \"win32\""}
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "contourpy"
@@ -668,6 +763,11 @@ mypy = ["contourpy[bokeh,docs]", "docutils-stubs", "mypy (==1.11.1)", "types-Pil
 test = ["Pillow", "contourpy[test-no-images]", "matplotlib"]
 test-no-images = ["pytest", "pytest-cov", "pytest-rerunfailures", "pytest-xdist", "wurlitzer"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "curl-cffi"
 version = "0.11.3"
@@ -697,6 +797,11 @@ dev = ["charset_normalizer (>=3.3.2,<4.0)", "coverage (>=6.4.1,<7.0)", "cryptogr
 extra = ["lxml_html_clean", "markdownify (>=1.1.0)", "readability-lxml (>=0.8.1)"]
 test = ["charset_normalizer (>=3.3.2,<4.0)", "cryptography (>=42.0.5,<43.0)", "fastapi (==0.110.0)", "httpx (==0.23.1)", "proxy.py (>=2.4.3,<3.0)", "pytest (>=8.1.1,<9.0)", "pytest-asyncio (>=0.23.6,<1.0)", "pytest-trio (>=0.8.0,<1.0)", "python-multipart (>=0.0.9,<1.0)", "trio (>=0.25.0,<1.0)", "trustme (>=1.1.0,<2.0)", "typing_extensions", "uvicorn (>=0.29.0,<1.0)", "websockets (>=12.0,<13.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "cycler"
 version = "0.12.1"
@@ -713,6 +818,11 @@ files = [
 docs = ["ipython", "matplotlib", "numpydoc", "sphinx"]
 tests = ["pytest", "pytest-cov", "pytest-xdist"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "decorator"
 version = "5.2.1"
@@ -724,6 +834,11 @@ files = [
     {file = "decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a"},
     {file = "decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "distro"
@@ -737,6 +852,11 @@ files = [
     {file = "distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "et-xmlfile"
 version = "2.0.0"
@@ -748,6 +868,11 @@ files = [
     {file = "et_xmlfile-2.0.0-py3-none-any.whl", hash = "sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa"},
     {file = "et_xmlfile-2.0.0.tar.gz", hash = "sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "exceptiongroup"
@@ -767,6 +892,11 @@ typing-extensions = {version = ">=4.6.0", markers = "python_version < \"3.13\""}
 
 [package.extras]
 test = ["pytest (>=6)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "fastapi"
@@ -789,6 +919,11 @@ typing-extensions = ">=4.8.0"
 all = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "httpx (>=0.23.0)", "itsdangerous (>=1.1.0)", "jinja2 (>=3.1.5)", "orjson (>=3.2.1)", "pydantic-extra-types (>=2.0.0)", "pydantic-settings (>=2.0.0)", "python-multipart (>=0.0.18)", "pyyaml (>=5.3.1)", "ujson (>=4.0.1,!=4.0.2,!=4.1.0,!=4.2.0,!=4.3.0,!=5.0.0,!=5.1.0)", "uvicorn[standard] (>=0.12.0)"]
 standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "httpx (>=0.23.0)", "jinja2 (>=3.1.5)", "python-multipart (>=0.0.18)", "uvicorn[standard] (>=0.12.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "flake8"
 version = "6.1.0"
@@ -805,6 +940,11 @@ files = [
 mccabe = ">=0.7.0,<0.8.0"
 pycodestyle = ">=2.11.0,<2.12.0"
 pyflakes = ">=3.1.0,<3.2.0"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "fonttools"
@@ -872,6 +1012,11 @@ ufo = ["fs (>=2.2.0,<3)"]
 unicode = ["unicodedata2 (>=15.1.0) ; python_version <= \"3.12\""]
 woff = ["brotli (>=1.0.1) ; platform_python_implementation == \"CPython\"", "brotlicffi (>=0.8.0) ; platform_python_implementation != \"CPython\"", "zopfli (>=0.1.4)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "frozendict"
 version = "2.4.6"
@@ -920,6 +1065,11 @@ files = [
     {file = "frozendict-2.4.6-py313-none-any.whl", hash = "sha256:7134a2bb95d4a16556bb5f2b9736dceb6ea848fa5b6f3f6c2d6dba93b44b4757"},
     {file = "frozendict-2.4.6.tar.gz", hash = "sha256:df7cd16470fbd26fc4969a208efadc46319334eb97def1ddf48919b351192b8e"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "frozenlist"
@@ -1035,6 +1185,11 @@ files = [
     {file = "frozenlist-1.7.0.tar.gz", hash = "sha256:2e310d81923c2437ea8670467121cc3e9b0f76d3043cc1d2331d56c7fb7a3a8f"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "google-ai-generativelanguage"
 version = "0.4.0"
@@ -1051,6 +1206,11 @@ files = [
 google-api-core = {version = ">=1.34.0,<2.0.dev0 || >=2.11.dev0,<3.0.0dev", extras = ["grpc"]}
 proto-plus = ">=1.22.3,<2.0.0dev"
 protobuf = ">=3.19.5,<3.20.0 || >3.20.0,<3.20.1 || >3.20.1,<4.21.0 || >4.21.0,<4.21.1 || >4.21.1,<4.21.2 || >4.21.2,<4.21.3 || >4.21.3,<4.21.4 || >4.21.4,<4.21.5 || >4.21.5,<5.0.0dev"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "google-api-core"
@@ -1088,6 +1248,11 @@ grpc = ["grpcio (>=1.33.2,<2.0.0)", "grpcio (>=1.49.1,<2.0.0) ; python_version >
 grpcgcp = ["grpcio-gcp (>=0.2.2,<1.0.0)"]
 grpcio-gcp = ["grpcio-gcp (>=0.2.2,<1.0.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "google-auth"
 version = "2.40.3"
@@ -1115,6 +1280,11 @@ requests = ["requests (>=2.20.0,<3.0.0)"]
 testing = ["aiohttp (<3.10.0)", "aiohttp (>=3.6.2,<4.0.0)", "aioresponses", "cryptography (<39.0.0) ; python_version < \"3.8\"", "cryptography (>=38.0.3)", "flask", "freezegun", "grpcio", "mock", "oauth2client", "packaging", "pyjwt (>=2.0)", "pyopenssl (<24.3.0)", "pyopenssl (>=20.0.0)", "pytest", "pytest-asyncio", "pytest-cov", "pytest-localserver", "pyu2f (>=0.1.5)", "requests (>=2.20.0,<3.0.0)", "responses", "urllib3"]
 urllib3 = ["packaging", "urllib3"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "google-genai"
 version = "0.6.0"
@@ -1133,6 +1303,11 @@ pillow = ">=10.0.0,<12.0.0"
 pydantic = ">=2.0.0,<3.0.0dev"
 requests = ">=2.28.1,<3.0.0dev"
 websockets = ">=13.0,<15.0dev"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "google-generativeai"
@@ -1156,6 +1331,11 @@ typing-extensions = "*"
 [package.extras]
 dev = ["Pillow", "absl-py", "black", "ipython", "nose2", "pandas", "pytype", "pyyaml"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "googleapis-common-protos"
 version = "1.70.0"
@@ -1173,6 +1353,11 @@ protobuf = ">=3.20.2,<4.21.1 || >4.21.1,<4.21.2 || >4.21.2,<4.21.3 || >4.21.3,<4
 
 [package.extras]
 grpc = ["grpcio (>=1.44.0,<2.0.0)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "greenlet"
@@ -1242,6 +1427,11 @@ files = [
 docs = ["Sphinx", "furo"]
 test = ["objgraph", "psutil"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "grpcio"
 version = "1.73.0"
@@ -1306,6 +1496,11 @@ files = [
 [package.extras]
 protobuf = ["grpcio-tools (>=1.73.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "grpcio-status"
 version = "1.62.3"
@@ -1323,6 +1518,11 @@ googleapis-common-protos = ">=1.5.5"
 grpcio = ">=1.62.3"
 protobuf = ">=4.21.6"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "h11"
 version = "0.16.0"
@@ -1334,6 +1534,11 @@ files = [
     {file = "h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"},
     {file = "h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "html5lib"
@@ -1357,6 +1562,11 @@ chardet = ["chardet (>=2.2)"]
 genshi = ["genshi"]
 lxml = ["lxml ; platform_python_implementation == \"CPython\""]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "httpcore"
 version = "1.0.9"
@@ -1378,6 +1588,11 @@ asyncio = ["anyio (>=4.0,<5.0)"]
 http2 = ["h2 (>=3,<5)"]
 socks = ["socksio (==1.*)"]
 trio = ["trio (>=0.22.0,<1.0)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "httpx"
@@ -1404,6 +1619,11 @@ http2 = ["h2 (>=3,<5)"]
 socks = ["socksio (==1.*)"]
 zstd = ["zstandard (>=0.18.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "idna"
 version = "3.10"
@@ -1418,6 +1638,11 @@ files = [
 
 [package.extras]
 all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "importlib-resources"
@@ -1443,6 +1668,11 @@ enabler = ["pytest-enabler (>=2.2)"]
 test = ["jaraco.test (>=5.4)", "pytest (>=6,!=8.1.*)", "zipp (>=3.17)"]
 type = ["pytest-mypy"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "iniconfig"
 version = "2.1.0"
@@ -1454,6 +1684,11 @@ files = [
     {file = "iniconfig-2.1.0-py3-none-any.whl", hash = "sha256:9deba5723312380e77435581c6bf4935c94cbfab9b1ed33ef8d238ea168eb760"},
     {file = "iniconfig-2.1.0.tar.gz", hash = "sha256:3abbd2e30b36733fee78f9c7f7308f2d0050e88f0087fd25c2645f63c773e1c7"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "isort"
@@ -1469,6 +1704,11 @@ files = [
 
 [package.extras]
 colors = ["colorama (>=0.4.6)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "jiter"
@@ -1557,10 +1797,15 @@ files = [
     {file = "jiter-0.10.0.tar.gz", hash = "sha256:07a7142c38aacc85194391108dc91b5b57093c978a9932bd86a36862759d9500"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "jsonpatch"
 version = "1.33"
-description = "Apply JSON-Patches (RFC 6902)"
+description = "Apply JSON-Patches (RFC 6902) "
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*"
 groups = ["main"]
@@ -1571,6 +1816,11 @@ files = [
 
 [package.dependencies]
 jsonpointer = ">=1.9"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "jsonpath"
@@ -1583,10 +1833,15 @@ files = [
     {file = "jsonpath-0.82.2.tar.gz", hash = "sha256:d87ef2bcbcded68ee96bc34c1809b69457ecec9b0c4dd471658a12bd391002d1"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "jsonpointer"
 version = "3.0.0"
-description = "Identify specific nodes in a JSON document (RFC 6901)"
+description = "Identify specific nodes in a JSON document (RFC 6901) "
 optional = false
 python-versions = ">=3.7"
 groups = ["main"]
@@ -1594,6 +1849,11 @@ files = [
     {file = "jsonpointer-3.0.0-py2.py3-none-any.whl", hash = "sha256:13e088adc14fca8b6aa8177c044e12701e6ad4b28ff10e65f2267a90109c9942"},
     {file = "jsonpointer-3.0.0.tar.gz", hash = "sha256:2b2d729f2091522d61c3b31f82e11870f60b68f43fbc705cb76bf4b832af59ef"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "kiwisolver"
@@ -1719,12 +1979,17 @@ files = [
     {file = "kiwisolver-1.4.7.tar.gz", hash = "sha256:9893ff81bd7107f7b685d3017cc6583daadb4fc26e4a888350df530e41980a60"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "langchain"
 version = "0.3.0"
 description = "Building applications with LLMs through composability"
 optional = false
-python-versions = "<4.0,>=3.9"
+python-versions = ">=3.9,<4.0"
 groups = ["main"]
 files = [
     {file = "langchain-0.3.0-py3-none-any.whl", hash = "sha256:59a75a6a1eb7bfd2a6bf0c7a5816409a8fdc9046187b07af287b23b9899617af"},
@@ -1747,6 +2012,11 @@ requests = ">=2,<3"
 SQLAlchemy = ">=1.4,<3"
 tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<9.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "langchain-core"
 version = "0.3.63"
@@ -1768,12 +2038,17 @@ PyYAML = ">=5.3"
 tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10.0.0"
 typing-extensions = ">=4.7"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "langchain-openai"
 version = "0.2.11"
 description = "An integration package connecting OpenAI and LangChain"
 optional = false
-python-versions = "<4.0,>=3.9"
+python-versions = ">=3.9,<4.0"
 groups = ["main"]
 files = [
     {file = "langchain_openai-0.2.11-py3-none-any.whl", hash = "sha256:c019ae915a5782943bee9503388e65c8622d400e0451ef885f3e4989cf35727f"},
@@ -1784,6 +2059,11 @@ files = [
 langchain-core = ">=0.3.21,<0.4.0"
 openai = ">=1.54.0,<2.0.0"
 tiktoken = ">=0.7,<1"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "langchain-text-splitters"
@@ -1800,12 +2080,17 @@ files = [
 [package.dependencies]
 langchain-core = ">=0.3.51,<1.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "langgraph"
 version = "0.2.56"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
-python-versions = "<4.0,>=3.9.0"
+python-versions = ">=3.9.0,<4.0"
 groups = ["main"]
 files = [
     {file = "langgraph-0.2.56-py3-none-any.whl", hash = "sha256:ad8a4b772e34dc0137e890bb6ced596a39a1e684af66250c1e7c8150dbe90e9c"},
@@ -1816,6 +2101,11 @@ files = [
 langchain-core = ">=0.2.43,<0.3.0 || >0.3.0,<0.3.1 || >0.3.1,<0.3.2 || >0.3.2,<0.3.3 || >0.3.3,<0.3.4 || >0.3.4,<0.3.5 || >0.3.5,<0.3.6 || >0.3.6,<0.3.7 || >0.3.7,<0.3.8 || >0.3.8,<0.3.9 || >0.3.9,<0.3.10 || >0.3.10,<0.3.11 || >0.3.11,<0.3.12 || >0.3.12,<0.3.13 || >0.3.13,<0.3.14 || >0.3.14,<0.4.0"
 langgraph-checkpoint = ">=2.0.4,<3.0.0"
 langgraph-sdk = ">=0.1.42,<0.2.0"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "langgraph-checkpoint"
@@ -1833,6 +2123,11 @@ files = [
 langchain-core = {version = ">=0.2.38", markers = "python_version < \"4.0\""}
 ormsgpack = ">=1.8.0,<2.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "langgraph-sdk"
 version = "0.1.70"
@@ -1849,12 +2144,17 @@ files = [
 httpx = ">=0.25.2"
 orjson = ">=3.10.1"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "langsmith"
 version = "0.1.147"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 optional = false
-python-versions = "<4.0,>=3.8.1"
+python-versions = ">=3.8.1,<4.0"
 groups = ["main"]
 files = [
     {file = "langsmith-0.1.147-py3-none-any.whl", hash = "sha256:7166fc23b965ccf839d64945a78e9f1157757add228b086141eb03a60d699a15"},
@@ -1873,6 +2173,11 @@ requests-toolbelt = ">=1.0.0,<2.0.0"
 
 [package.extras]
 langsmith-pyo3 = ["langsmith-pyo3 (>=0.1.0rc2,<0.2.0)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "lxml"
@@ -2023,6 +2328,11 @@ html5 = ["html5lib"]
 htmlsoup = ["BeautifulSoup4"]
 source = ["Cython (>=3.0.11,<3.1.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "matplotlib"
 version = "3.9.4"
@@ -2089,6 +2399,11 @@ python-dateutil = ">=2.7"
 [package.extras]
 dev = ["meson-python (>=0.13.1,<0.17.0)", "numpy (>=1.25)", "pybind11 (>=2.6,!=2.13.3)", "setuptools (>=64)", "setuptools_scm (>=7)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "mccabe"
 version = "0.7.0"
@@ -2100,6 +2415,11 @@ files = [
     {file = "mccabe-0.7.0-py2.py3-none-any.whl", hash = "sha256:6c2d30ab6be0e4a46919781807b4f0d834ebdd6c6e3dca0bda5a15f863427b6e"},
     {file = "mccabe-0.7.0.tar.gz", hash = "sha256:348e0240c33b60bbdf4e523192ef919f28cb2c3d7d5c7794f74009290f236325"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "mini-racer"
@@ -2119,6 +2439,11 @@ files = [
     {file = "mini_racer-0.12.4-py3-none-win_amd64.whl", hash = "sha256:9446e3bd6a4eb9fbedf1861326f7476080995a31c9b69308acef17e5b7ecaa1b"},
     {file = "mini_racer-0.12.4.tar.gz", hash = "sha256:84c67553ce9f3736d4c617d8a3f882949d37a46cfb47fe11dab33dd6704e62a4"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "multidict"
@@ -2237,6 +2562,11 @@ files = [
 [package.dependencies]
 typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "multitasking"
 version = "0.0.11"
@@ -2248,6 +2578,11 @@ files = [
     {file = "multitasking-0.0.11-py3-none-any.whl", hash = "sha256:1e5b37a5f8fc1e6cfaafd1a82b6b1cc6d2ed20037d3b89c25a84f499bd7b3dd4"},
     {file = "multitasking-0.0.11.tar.gz", hash = "sha256:4d6bc3cc65f9b2dca72fb5a787850a88dae8f620c2b36ae9b55248e51bcd6026"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "mypy-extensions"
@@ -2261,6 +2596,11 @@ files = [
     {file = "mypy_extensions-1.1.0.tar.gz", hash = "sha256:52e68efc3284861e772bbcd66823fde5ae21fd2fdb51c62a211403730b916558"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "nest-asyncio"
 version = "1.6.0"
@@ -2272,6 +2612,11 @@ files = [
     {file = "nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c"},
     {file = "nest_asyncio-1.6.0.tar.gz", hash = "sha256:6f172d5449aca15afd6c646851f4e31e02c598d553a667e38cafa997cfec55fe"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "numpy"
@@ -2319,6 +2664,11 @@ files = [
     {file = "numpy-1.26.4.tar.gz", hash = "sha256:2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "openai"
 version = "1.86.0"
@@ -2346,6 +2696,11 @@ datalib = ["numpy (>=1)", "pandas (>=1.2.3)", "pandas-stubs (>=1.1.0.11)"]
 realtime = ["websockets (>=13,<16)"]
 voice-helpers = ["numpy (>=2.0.2)", "sounddevice (>=0.5.1)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "openpyxl"
 version = "3.1.5"
@@ -2360,6 +2715,11 @@ files = [
 
 [package.dependencies]
 et-xmlfile = "*"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "orjson"
@@ -2443,6 +2803,11 @@ files = [
     {file = "orjson-3.10.18.tar.gz", hash = "sha256:e8da3947d92123eda795b68228cafe2724815621fe35e8e320a9e9593a4bcd53"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "ormsgpack"
 version = "1.10.0"
@@ -2494,6 +2859,11 @@ files = [
     {file = "ormsgpack-1.10.0.tar.gz", hash = "sha256:7f7a27efd67ef22d7182ec3b7fa7e9d147c3ad9be2a24656b23c989077e08b16"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "packaging"
 version = "24.2"
@@ -2505,6 +2875,11 @@ files = [
     {file = "packaging-24.2-py3-none-any.whl", hash = "sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759"},
     {file = "packaging-24.2.tar.gz", hash = "sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pandas"
@@ -2593,6 +2968,11 @@ sql-other = ["SQLAlchemy (>=2.0.0)", "adbc-driver-postgresql (>=0.8.0)", "adbc-d
 test = ["hypothesis (>=6.46.1)", "pytest (>=7.3.2)", "pytest-xdist (>=2.2.0)"]
 xml = ["lxml (>=4.9.2)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pathspec"
 version = "0.12.1"
@@ -2605,6 +2985,11 @@ files = [
     {file = "pathspec-0.12.1.tar.gz", hash = "sha256:a482d51503a1ab33b1c67a6c3813a26953dbdc71c31dacaef9a838c4e29f5712"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "peewee"
 version = "3.18.1"
@@ -2615,6 +3000,11 @@ groups = ["main"]
 files = [
     {file = "peewee-3.18.1.tar.gz", hash = "sha256:a76a694b3b3012ce22f00d51fd83e55bf80b595275a90ed62cd36eb45496cf1d"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pillow"
@@ -2716,6 +3106,11 @@ tests = ["check-manifest", "coverage (>=7.4.2)", "defusedxml", "markdown2", "ole
 typing = ["typing-extensions ; python_version < \"3.10\""]
 xmp = ["defusedxml"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "platformdirs"
 version = "4.3.8"
@@ -2732,6 +3127,11 @@ files = [
 docs = ["furo (>=2024.8.6)", "proselint (>=0.14)", "sphinx (>=8.1.3)", "sphinx-autodoc-typehints (>=3)"]
 test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=8.3.4)", "pytest-cov (>=6)", "pytest-mock (>=3.14)"]
 type = ["mypy (>=1.14.1)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "playwright"
@@ -2755,6 +3155,11 @@ files = [
 greenlet = ">=3.1.1,<4.0.0"
 pyee = ">=13,<14"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pluggy"
 version = "1.6.0"
@@ -2770,6 +3175,11 @@ files = [
 [package.extras]
 dev = ["pre-commit", "tox"]
 testing = ["coverage", "pytest", "pytest-benchmark"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "propcache"
@@ -2879,6 +3289,11 @@ files = [
     {file = "propcache-0.3.2.tar.gz", hash = "sha256:20d7d62e4e7ef05f221e0db2856b979540686342e7dd9973b815599c7057e168"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "proto-plus"
 version = "1.26.1"
@@ -2896,6 +3311,11 @@ protobuf = ">=3.19.0,<7.0.0"
 
 [package.extras]
 testing = ["google-api-core (>=1.31.5)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "protobuf"
@@ -2918,6 +3338,11 @@ files = [
     {file = "protobuf-4.25.8.tar.gz", hash = "sha256:6135cf8affe1fc6f76cced2641e4ea8d3e59518d1f24ae41ba97bcad82d397cd"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "py-mini-racer"
 version = "0.6.0"
@@ -2933,6 +3358,11 @@ files = [
     {file = "py_mini_racer-0.6.0.tar.gz", hash = "sha256:f71e36b643d947ba698c57cd9bd2232c83ca997b0802fc2f7f79582377040c11"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pyasn1"
 version = "0.6.1"
@@ -2944,6 +3374,11 @@ files = [
     {file = "pyasn1-0.6.1-py3-none-any.whl", hash = "sha256:0d632f46f2ba09143da3a8afe9e33fb6f92fa2320ab7e886e2d0f7672af84629"},
     {file = "pyasn1-0.6.1.tar.gz", hash = "sha256:6f580d2bdd84365380830acf45550f2511469f673cb4a5ae3857a3170128b034"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pyasn1-modules"
@@ -2960,6 +3395,11 @@ files = [
 [package.dependencies]
 pyasn1 = ">=0.6.1,<0.7.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pycodestyle"
 version = "2.11.1"
@@ -2972,6 +3412,11 @@ files = [
     {file = "pycodestyle-2.11.1.tar.gz", hash = "sha256:41ba0e7afc9752dfb53ced5489e89f8186be00e599e712660695b7a75ff2663f"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pycparser"
 version = "2.22"
@@ -2983,6 +3428,11 @@ files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
     {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pydantic"
@@ -3005,6 +3455,11 @@ typing-inspection = ">=0.4.0"
 [package.extras]
 email = ["email-validator (>=2.0.0)"]
 timezone = ["tzdata ; python_version >= \"3.9\" and platform_system == \"Windows\""]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pydantic-core"
@@ -3118,6 +3573,11 @@ files = [
 [package.dependencies]
 typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pyee"
 version = "13.0.0"
@@ -3136,6 +3596,11 @@ typing-extensions = "*"
 [package.extras]
 dev = ["black", "build", "flake8", "flake8-black", "isort", "jupyter-console", "mkdocs", "mkdocs-include-markdown-plugin", "mkdocstrings[python]", "mypy", "pytest", "pytest-asyncio ; python_version >= \"3.4\"", "pytest-trio ; python_version >= \"3.7\"", "sphinx", "toml", "tox", "trio", "trio ; python_version > \"3.6\"", "trio-typing ; python_version > \"3.6\"", "twine", "twisted", "validate-pyproject[all]"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pyflakes"
 version = "3.1.0"
@@ -3147,6 +3612,11 @@ files = [
     {file = "pyflakes-3.1.0-py2.py3-none-any.whl", hash = "sha256:4132f6d49cb4dae6819e5379898f2b8cce3c5f23994194c24b77d5da2e36f774"},
     {file = "pyflakes-3.1.0.tar.gz", hash = "sha256:a0aae034c444db0071aa077972ba4768d40c830d9539fd45bf4cd3f8f6992efc"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pyparsing"
@@ -3162,6 +3632,11 @@ files = [
 
 [package.extras]
 diagrams = ["jinja2", "railroad-diagrams"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pytest"
@@ -3186,6 +3661,11 @@ tomli = {version = ">=1.0.0", markers = "python_version < \"3.11\""}
 [package.extras]
 testing = ["argcomplete", "attrs (>=19.2.0)", "hypothesis (>=3.56)", "mock", "nose", "pygments (>=2.7.2)", "requests", "setuptools", "xmlschema"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
@@ -3200,6 +3680,11 @@ files = [
 
 [package.dependencies]
 six = ">=1.5"
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "python-dotenv"
@@ -3216,6 +3701,11 @@ files = [
 [package.extras]
 cli = ["click (>=5.0)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "pytz"
 version = "2025.2"
@@ -3227,6 +3717,11 @@ files = [
     {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
     {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "pyyaml"
@@ -3290,6 +3785,11 @@ files = [
     {file = "PyYAML-6.0.2-cp39-cp39-win_amd64.whl", hash = "sha256:39693e1f8320ae4f43943590b49779ffb98acb81f788220ea932a6b6c51004d8"},
     {file = "pyyaml-6.0.2.tar.gz", hash = "sha256:d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "regex"
@@ -3395,6 +3895,11 @@ files = [
     {file = "regex-2024.11.6.tar.gz", hash = "sha256:7ab159b063c52a0333c884e4679f8d7a85112ee3078fe3d9004b2dd875585519"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "requests"
 version = "2.32.4"
@@ -3417,6 +3922,11 @@ urllib3 = ">=1.21.1,<3"
 socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "requests-toolbelt"
 version = "1.0.0"
@@ -3432,12 +3942,17 @@ files = [
 [package.dependencies]
 requests = ">=2.0.1,<3.0.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "rsa"
 version = "4.9.1"
 description = "Pure-Python RSA implementation"
 optional = false
-python-versions = "<4,>=3.6"
+python-versions = ">=3.6,<4"
 groups = ["main"]
 files = [
     {file = "rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762"},
@@ -3447,17 +3962,27 @@ files = [
 [package.dependencies]
 pyasn1 = ">=0.1.3"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "six"
 version = "1.17.0"
 description = "Python 2 and 3 compatibility utilities"
 optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
 groups = ["main"]
 files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "sniffio"
@@ -3471,6 +3996,11 @@ files = [
     {file = "sniffio-1.3.1.tar.gz", hash = "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "soupsieve"
 version = "2.7"
@@ -3482,6 +4012,11 @@ files = [
     {file = "soupsieve-2.7-py3-none-any.whl", hash = "sha256:6e60cc5c1ffaf1cebcc12e8188320b72071e922c2e897f737cadce79ad5d30c4"},
     {file = "soupsieve-2.7.tar.gz", hash = "sha256:ad282f9b6926286d2ead4750552c8a6142bc4c783fd66b0293547c8fe6ae126a"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "sqlalchemy"
@@ -3579,6 +4114,11 @@ postgresql-psycopgbinary = ["psycopg[binary] (>=3.0.7)"]
 pymysql = ["pymysql"]
 sqlcipher = ["sqlcipher3_binary"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "starlette"
 version = "0.46.2"
@@ -3598,6 +4138,11 @@ typing-extensions = {version = ">=3.10.0", markers = "python_version < \"3.10\""
 [package.extras]
 full = ["httpx (>=0.27.0,<0.29.0)", "itsdangerous", "jinja2", "python-multipart (>=0.0.18)", "pyyaml"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "tabulate"
 version = "0.9.0"
@@ -3612,6 +4157,11 @@ files = [
 
 [package.extras]
 widechars = ["wcwidth"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "tenacity"
@@ -3628,6 +4178,11 @@ files = [
 [package.extras]
 doc = ["reno", "sphinx"]
 test = ["pytest", "tornado (>=4.5)", "typeguard"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "tiktoken"
@@ -3677,6 +4232,11 @@ requests = ">=2.26.0"
 [package.extras]
 blobfile = ["blobfile (>=2)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "tomli"
 version = "2.2.1"
@@ -3720,6 +4280,11 @@ files = [
     {file = "tomli-2.2.1.tar.gz", hash = "sha256:cd45e1dc79c835ce60f7404ec8119f2eb06d38b1deba146f07ced3bbc44505ff"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "tqdm"
 version = "4.67.1"
@@ -3742,6 +4307,11 @@ notebook = ["ipywidgets (>=6)"]
 slack = ["slack-sdk"]
 telegram = ["requests"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "typing-extensions"
 version = "4.14.0"
@@ -3754,6 +4324,11 @@ files = [
     {file = "typing_extensions-4.14.0.tar.gz", hash = "sha256:8676b788e32f02ab42d9e7c61324048ae4c6d844a399eebace3d4979d75ceef4"},
 ]
 markers = {dev = "python_version < \"3.11\""}
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "typing-inspection"
@@ -3770,6 +4345,11 @@ files = [
 [package.dependencies]
 typing-extensions = ">=4.12.0"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "tzdata"
 version = "2025.2"
@@ -3781,6 +4361,11 @@ files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "urllib3"
@@ -3799,6 +4384,11 @@ brotli = ["brotli (>=1.0.9) ; platform_python_implementation == \"CPython\"", "b
 h2 = ["h2 (>=4,<5)"]
 socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["zstandard (>=0.18.0)"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "uvicorn"
@@ -3820,6 +4410,11 @@ typing-extensions = {version = ">=4.0", markers = "python_version < \"3.11\""}
 [package.extras]
 standard = ["colorama (>=0.4) ; sys_platform == \"win32\"", "httptools (>=0.6.3)", "python-dotenv (>=0.13)", "pyyaml (>=5.1)", "uvloop (>=0.15.1) ; sys_platform != \"win32\" and sys_platform != \"cygwin\" and platform_python_implementation != \"PyPy\"", "watchfiles (>=0.13)", "websockets (>=10.4)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "webencodings"
 version = "0.5.1"
@@ -3831,6 +4426,11 @@ files = [
     {file = "webencodings-0.5.1-py2.py3-none-any.whl", hash = "sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78"},
     {file = "webencodings-0.5.1.tar.gz", hash = "sha256:b36a1c245f2d304965eb4e0a82848379241dc04b865afcc4aab16748587e1923"},
 ]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "websockets"
@@ -3911,6 +4511,11 @@ files = [
     {file = "websockets-14.2.tar.gz", hash = "sha256:5059ed9c54945efb321f097084b4c7e52c246f2c869815876a69d1efc4ad6eb5"},
 ]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "xlrd"
 version = "2.0.1"
@@ -3927,6 +4532,11 @@ files = [
 build = ["twine", "wheel"]
 docs = ["sphinx"]
 test = ["pytest", "pytest-cov"]
+
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
 
 [[package]]
 name = "yarl"
@@ -4047,6 +4657,11 @@ idna = ">=2.0"
 multidict = ">=4.0"
 propcache = ">=0.2.1"
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "yfinance"
 version = "0.2.63"
@@ -4077,6 +4692,11 @@ websockets = ">=13.0"
 nospam = ["requests_cache (>=1.0)", "requests_ratelimiter (>=0.3.1)"]
 repair = ["scipy (>=1.6.3)"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [[package]]
 name = "zipp"
 version = "3.23.0"
@@ -4098,7 +4718,12 @@ enabler = ["pytest-enabler (>=2.2)"]
 test = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more_itertools", "pytest (>=6,!=8.1.*)", "pytest-ignore-flaky"]
 type = ["pytest-mypy"]
 
+[package.source]
+type = "legacy"
+url = "https://repo.huaweicloud.com/repository/pypi/simple"
+reference = "huawei"
+
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "ab61ec70d7cbf5b60278312a651f51ce98991bccfc0374317eac4a2865757e60"
+content-hash = "57ced6a49d311b9ee9bc5f687ab75bb60d9066b4df16d83e3ea75eefa1a0c288"
