@@ -68,7 +68,8 @@ def macro_news_agent(state: AgentState) -> Dict[str, Any]:
         try:
             with open(output_file_path, 'r', encoding='utf-8') as f:
                 all_summaries = json.load(f)
-            if today_str in all_summaries and all_summaries[today_str].get("summary_content"):
+            cached_content = all_summaries.get(today_str, {}).get("summary_content", "")
+            if today_str in all_summaries and cached_content and "未能返回有效结果" not in cached_content and "发生错误" not in cached_content:
                 cached_data = all_summaries[today_str]
                 summary = cached_data["summary_content"]
                 retrieved_news_count = cached_data.get(

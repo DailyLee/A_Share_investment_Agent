@@ -48,12 +48,25 @@ def get_sina_stock_news(stock_code: str, max_news: int = 20) -> List[Dict]:
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # 查找新闻列表
-            news_items = soup.find_all('li')
+            # 优先查找新闻列表容器，避免匹配导航/侧边栏
+            news_container = (
+                soup.find('div', class_='datalist') or
+                soup.find('div', id='newlist') or
+                soup.find('div', class_='news_list') or
+                soup.find('ul', class_='list01') or
+                soup.find('div', class_='main')
+            )
             
-            for item in news_items[:max_news]:
+            if news_container:
+                news_items = news_container.find_all('li')
+            else:
+                news_items = soup.find_all('li')
+            
+            seen_titles = set()
+            for item in news_items:
+                if len(news_list) >= max_news:
+                    break
                 try:
-                    # 查找链接
                     link = item.find('a')
                     if not link:
                         continue
@@ -64,18 +77,30 @@ def get_sina_stock_news(stock_code: str, max_news: int = 20) -> List[Dict]:
                     if not title or not href:
                         continue
                     
+                    # 过滤非新闻内容：标题太短（导航项通常 < 8 字）
+                    if len(title) < 8:
+                        continue
+                    
+                    # 过滤非新闻链接：真实新闻URL包含文章路径
+                    if not any(ext in href for ext in ['.shtml', '.html', '/doc-', '/article/']):
+                        continue
+                    
+                    # 去重
+                    if title in seen_titles:
+                        continue
+                    seen_titles.add(title)
+                    
                     # 查找时间
                     time_elem = item.find('span', class_='time') or item.find('span')
                     publish_time = ''
                     if time_elem:
                         publish_time = time_elem.get_text(strip=True)
                     
-                    # 标准化时间
                     publish_time = normalize_sina_time(publish_time)
                     
                     news_item = {
                         'title': title,
-                        'content': title,  # 摘要使用标题
+                        'content': title,
                         'publish_time': publish_time,
                         'source': '新浪财经',
                         'url': href,
@@ -90,6 +115,8 @@ def get_sina_stock_news(stock_code: str, max_news: int = 20) -> List[Dict]:
             
             if news_list:
                 print(f"✓ 成功获取 {len(news_list)} 条新浪财经新闻")
+            else:
+                print(f"新浪财经页面未找到有效新闻（已过滤 {len(news_items)} 个元素）")
                 
     except Exception as e:
         print(f"获取新浪财经新闻时出错: {e}")
@@ -166,6 +193,44 @@ def get_sina_market_news(max_news: int = 50) -> List[Dict]:
                 
     except Exception as e:
         print(f"获取新浪财经要闻时出错: {e}")
+    
+    return news_list
+
+
+def get_sina_industry_news(industry: str, max_news: int = 20) -> List[Dict]:
+    """
+    从新浪财经获取行业新闻（从市场要闻中按行业关键词筛选）
+    
+    Args:
+        industry: 行业名称，如 '白酒', '新能源'
+        max_news: 最多获取的新闻条数
+    
+    Returns:
+        新闻列表
+    """
+    news_list = []
+    
+    try:
+        print(f"正在从新浪财经筛选 {industry} 行业新闻...")
+        
+        market_news = get_sina_market_news(max_news=200)
+        
+        for news in market_news:
+            title = news.get('title', '')
+            content = news.get('content', '')
+            if industry in title or industry in content:
+                news['keyword'] = industry
+                news_list.append(news)
+                if len(news_list) >= max_news:
+                    break
+        
+        if news_list:
+            print(f"✓ 从新浪市场要闻中筛选出 {len(news_list)} 条 {industry} 行业新闻")
+        else:
+            print(f"新浪财经市场要闻中未找到 {industry} 相关新闻")
+                
+    except Exception as e:
+        print(f"获取新浪行业新闻时出错: {e}")
     
     return news_list
 

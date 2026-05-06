@@ -176,13 +176,12 @@ workflow.add_edge("researcher_bear_agent", "debate_room_agent")
 
 workflow.add_edge("debate_room_agent", "risk_management_agent")
 workflow.add_edge("risk_management_agent", "macro_analyst_agent")
+# macro_news_agent 也汇入 macro_analyst_agent，确保新闻数据在宏观分析时可用
+# 这样 macro_analyst_agent 等待 risk_management_agent 和 macro_news_agent 都完成后才运行
+workflow.add_edge("macro_news_agent", "macro_analyst_agent")
 
-# Edges to portfolio_management_agent (汇聚点)
-# macro_analyst_agent (end of main analysis path) and macro_news_agent (parallel news path)
-# both feed into portfolio_management_agent.
-# LangGraph will wait for both parent nodes to complete before running portfolio_management_agent.
+# portfolio_management_agent 只有一个入边，避免被过早触发
 workflow.add_edge("macro_analyst_agent", "portfolio_management_agent")
-workflow.add_edge("macro_news_agent", "portfolio_management_agent")
 
 # Final node
 workflow.add_edge("portfolio_management_agent", END)

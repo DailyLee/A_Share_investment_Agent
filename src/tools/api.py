@@ -334,8 +334,44 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
             # 计算 price_to_sales
             # 注意：market_cap 单位是亿元，revenue 单位是元（需要统一单位）
             market_cap_yi = float(stock_data.get("总市值", 0))  # 市值（亿元）
-            revenue = float(latest_income.get("营业总收入", 0))  # 营收（元）
-            
+            raw_revenue = float(latest_income.get("营业总收入", 0))  # 营收（元，可能是季报累计值）
+
+            # 年化营收：优先使用TTM，回退到简单年化
+            income_annualize_factor, income_report_period = _get_annualization_factor(
+                latest_income.get("报告日", None)
+            )
+            if income_annualize_factor != 1.0:
+                try:
+                    rpt_date = pd.to_datetime(str(latest_income.get("报告日", "")))
+                    ps_annual_row = _find_report_row(income_statement, 12, rpt_date.year - 1)
+                    ps_prev_q_row = _find_report_row(income_statement, rpt_date.month, rpt_date.year - 1)
+                    if ps_annual_row is not None and ps_prev_q_row is not None:
+                        # 检查年报与季报口径是否一致
+                        fy_rev = _get_field_value(ps_annual_row, "营业总收入")
+                        q3_ps_row = _find_report_row(income_statement, 9, rpt_date.year - 1)
+                        q3_rev = _get_field_value(q3_ps_row, "营业总收入") if q3_ps_row is not None else 0
+                        if q3_rev > 0 and fy_rev < q3_rev * 0.95:
+                            # 口径不一致，用Q3合并数据年化
+                            if q3_ps_row is not None:
+                                revenue = _get_field_value(q3_ps_row, "营业总收入") * (4.0 / 3.0)
+                                logger.info(f"📊 P/S计算: 年报口径不一致，使用Q3合并营收年化={revenue/1e8:.2f}亿")
+                            else:
+                                revenue = raw_revenue * income_annualize_factor
+                                logger.info(f"📊 P/S计算: 简单年化×{income_annualize_factor:.2f}，营收={revenue/1e8:.2f}亿")
+                        else:
+                            revenue = (fy_rev + raw_revenue - _get_field_value(ps_prev_q_row, "营业总收入"))
+                            logger.info(f"📊 P/S计算: 使用TTM营收={revenue/1e8:.2f}亿 "
+                                       f"(原始{income_report_period}={raw_revenue/1e8:.2f}亿)")
+                    else:
+                        revenue = raw_revenue * income_annualize_factor
+                        logger.info(f"📊 P/S计算: TTM数据不完整，简单年化×{income_annualize_factor:.2f}，"
+                                   f"营收={revenue/1e8:.2f}亿")
+                except Exception:
+                    revenue = raw_revenue * income_annualize_factor
+                    logger.info(f"📊 P/S计算: 简单年化×{income_annualize_factor:.2f}，营收={revenue/1e8:.2f}亿")
+            else:
+                revenue = raw_revenue
+
             # 如果从 Baostock 获取了 price_to_sales，直接使用
             if baostock_data and baostock_data.get("price_to_sales", 0) > 0:
                 price_to_sales = baostock_data["price_to_sales"]
@@ -343,7 +379,7 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
             elif market_cap_yi > 0 and revenue > 0:
                 market_cap_yuan = market_cap_yi * 100_000_000  # 转换为元
                 price_to_sales = market_cap_yuan / revenue
-                logger.debug(f"计算P/S: 市值={market_cap_yi:.2f}亿(元)={market_cap_yuan:.0f}元, 营收={revenue:.0f}元, P/S={price_to_sales:.2f}")
+                logger.debug(f"计算P/S: 市值={market_cap_yi:.2f}亿={market_cap_yuan:.0f}元, 年化营收={revenue:.0f}元, P/S={price_to_sales:.2f}")
             else:
                 price_to_sales = 0
                 if market_cap_yi <= 0:
@@ -430,6 +466,67 @@ def get_financial_metrics(symbol: str) -> Dict[str, Any]:
         return [{}]
 
 
+def _get_annualization_factor(report_date_str) -> tuple:
+    """根据报告日期判断是哪个季度，返回(年化因子, 报告期描述)
+
+    中国上市公司财务报表累计口径：
+    - Q1 (3月31日): 1-3月累计，年化因子=4
+    - H1 (6月30日): 1-6月累计，年化因子=2
+    - Q3 (9月30日): 1-9月累计，年化因子=4/3
+    - 年报 (12月31日): 全年，年化因子=1
+    """
+    try:
+        if report_date_str is None or str(report_date_str).strip() == "":
+            return 1.0, "未知"
+
+        date_str = str(report_date_str).strip()[:10]
+        try:
+            report_date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            try:
+                report_date = datetime.strptime(date_str, "%Y%m%d")
+            except ValueError:
+                report_date = pd.to_datetime(report_date_str)
+
+        month = report_date.month
+        if month == 3:
+            return 4.0, "Q1（一季报）"
+        elif month == 6:
+            return 2.0, "H1（中报）"
+        elif month == 9:
+            return 4.0 / 3.0, "Q3（三季报）"
+        else:
+            return 1.0, "年报"
+    except Exception as e:
+        logger.warning(f"无法解析报告日期 '{report_date_str}'，不进行年化: {e}")
+        return 1.0, "未知"
+
+
+def _find_report_row(dataframe, target_month: int, target_year: int):
+    """在财务报表DataFrame中查找指定年份和月份的报告行"""
+    if dataframe is None or dataframe.empty:
+        return None
+    for idx in range(len(dataframe)):
+        row = dataframe.iloc[idx]
+        try:
+            report_date = pd.to_datetime(str(row.get("报告日", "")))
+            if report_date.month == target_month and report_date.year == target_year:
+                return row
+        except Exception:
+            continue
+    return None
+
+
+def _get_field_value(row, field_name: str) -> float:
+    """安全地从报告行中获取字段值"""
+    if row is None:
+        return 0.0
+    try:
+        return float(row.get(field_name, 0))
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def get_financial_statements(symbol: str) -> Dict[str, Any]:
     """获取财务报表数据"""
     logger.info(f"Getting financial statements for {symbol}...")
@@ -497,71 +594,193 @@ def get_financial_statements(symbol: str) -> Dict[str, Any]:
             latest_cash_flow = pd.Series()
             previous_cash_flow = pd.Series()
 
+        # ============================================================
+        # 检测报告期，优先使用 TTM（滚动12个月），回退到简单年化
+        # ============================================================
+        # 中国上市公司利润表/现金流量表为累计口径：
+        #   Q1=1-3月, H1=1-6月, Q3=1-9月, 年报=1-12月
+        # 直接使用季报数据会严重低估/高估年度值（如白酒Q1因春节旺季偏高）
+        #
+        # TTM（Trailing Twelve Months）= 上年年报 + 最新累计 - 去年同期累计
+        #   例: TTM净利润 = FY2025净利润 + Q1_2026净利润 - Q1_2025净利润
+        # ============================================================
+        annualize_factor, report_period = _get_annualization_factor(
+            latest_income.get("报告日", None)
+        )
+
+        use_ttm = False
+        use_q3_fallback = False
+        q3_fallback_income = None
+        q3_fallback_cf = None
+        q3_annualize_factor = 1.0
+        annual_income_row = None
+        prev_quarter_income_row = None
+        annual_cf_row = None
+        prev_quarter_cf_row = None
+
+        if annualize_factor != 1.0:
+            try:
+                report_date = pd.to_datetime(str(latest_income.get("报告日", "")))
+                rpt_month = report_date.month
+                rpt_year = report_date.year
+
+                annual_income_row = _find_report_row(income_statement, 12, rpt_year - 1)
+                prev_quarter_income_row = _find_report_row(income_statement, rpt_month, rpt_year - 1)
+                annual_cf_row = _find_report_row(cash_flow, 12, rpt_year - 1)
+                prev_quarter_cf_row = _find_report_row(cash_flow, rpt_month, rpt_year - 1)
+
+                if (annual_income_row is not None and prev_quarter_income_row is not None
+                        and annual_cf_row is not None and prev_quarter_cf_row is not None):
+                    # 验证年报与季报是否来自同一口径（合并 vs 母公司）
+                    # 如果年报营收 < 三季报累计营收，说明年报是母公司报表，季报是合并报表
+                    fy_revenue = _get_field_value(annual_income_row, "营业总收入")
+                    q3_check_row = _find_report_row(income_statement, 9, rpt_year - 1)
+                    data_consistent = True
+                    if q3_check_row is not None:
+                        q3_revenue = _get_field_value(q3_check_row, "营业总收入")
+                        if fy_revenue > 0 and q3_revenue > 0 and fy_revenue < q3_revenue * 0.95:
+                            data_consistent = False
+                            logger.warning(f"⚠️ 检测到报表口径不一致: FY{rpt_year-1}年报营收={fy_revenue/1e8:.2f}亿 "
+                                          f"< Q3{rpt_year-1}累计营收={q3_revenue/1e8:.2f}亿")
+                            logger.warning(f"   年报可能是母公司报表，季报是合并报表，不使用TTM")
+
+                    if data_consistent:
+                        use_ttm = True
+                        logger.info(f"📊 最新报告期: {report_period}，使用 TTM（滚动12个月）"
+                                   f" = FY{rpt_year-1}年报 + {rpt_year}{report_period} - {rpt_year-1}年同期")
+                    else:
+                        # 年报与季报口径不一致，改用Q3合并报表(9个月)年化
+                        q3_cf_row = _find_report_row(cash_flow, 9, rpt_year - 1)
+                        if q3_check_row is not None and q3_cf_row is not None:
+                            use_ttm = False
+                            use_q3_fallback = True
+                            q3_fallback_income = q3_check_row
+                            q3_fallback_cf = q3_cf_row
+                            q3_annualize_factor = 4.0 / 3.0
+                            logger.info(f"📊 改用 Q3{rpt_year-1} 合并报表(9个月)年化 × {q3_annualize_factor:.4f}")
+                            logger.info(f"   Q3合并营收={q3_revenue/1e8:.2f}亿 → 年化≈{q3_revenue*q3_annualize_factor/1e8:.2f}亿")
+                        else:
+                            use_ttm = False
+                            logger.warning(f"📊 Q3数据也不可用，回退到Q1简单年化×{annualize_factor:.2f}")
+                else:
+                    missing = []
+                    if annual_income_row is None:
+                        missing.append(f"FY{rpt_year-1}利润表年报")
+                    if prev_quarter_income_row is None:
+                        missing.append(f"{rpt_year-1}年{rpt_month}月利润表")
+                    if annual_cf_row is None:
+                        missing.append(f"FY{rpt_year-1}现金流年报")
+                    if prev_quarter_cf_row is None:
+                        missing.append(f"{rpt_year-1}年{rpt_month}月现金流")
+                    logger.warning(f"📊 TTM数据不完整（缺少: {', '.join(missing)}），回退到简单年化×{annualize_factor:.2f}")
+            except Exception as e:
+                logger.warning(f"TTM数据查找失败: {e}，回退到简单年化×{annualize_factor:.2f}")
+        else:
+            logger.info(f"📊 最新报告期: {report_period}（年报，无需年化）")
+
+        # 上期数据的年化因子
+        prev_annualize_factor, prev_report_period = _get_annualization_factor(
+            previous_income.get("报告日", None)
+        )
+
         # 构建财务数据
         line_items = []
         try:
-            # 处理最新期间数据
-            net_income = float(latest_income.get("净利润", 0))
-            operating_revenue = float(latest_income.get("营业总收入", 0))
-            operating_cash_flow = float(latest_cash_flow.get("经营活动产生的现金流量净额", 0))
-            
-            # 尝试获取折旧数据
-            depreciation = float(latest_cash_flow.get("固定资产折旧、油气资产折耗、生产性生物资产折旧", 0))
-            
-            # 如果折旧数据缺失，使用估算值
+            # ---- 处理最新期间数据 ----
+            # 利润表和现金流量表使用 TTM 或简单年化；资产负债表为时点数据不处理
+            if use_ttm:
+                def _ttm(latest_row, annual_row, prev_q_row, field):
+                    return (_get_field_value(annual_row, field)
+                            + _get_field_value(latest_row, field)
+                            - _get_field_value(prev_q_row, field))
+
+                net_income = _ttm(latest_income, annual_income_row, prev_quarter_income_row, "净利润")
+                operating_revenue = _ttm(latest_income, annual_income_row, prev_quarter_income_row, "营业总收入")
+                operating_profit = _ttm(latest_income, annual_income_row, prev_quarter_income_row, "营业利润")
+                operating_cash_flow = _ttm(latest_cash_flow, annual_cf_row, prev_quarter_cf_row, "经营活动产生的现金流量净额")
+                depreciation = _ttm(latest_cash_flow, annual_cf_row, prev_quarter_cf_row, "固定资产折旧、油气资产折耗、生产性生物资产折旧")
+                capital_expenditure = abs(_ttm(latest_cash_flow, annual_cf_row, prev_quarter_cf_row, "购建固定资产、无形资产和其他长期资产所支付的现金"))
+                method_label = "TTM"
+
+                logger.info(f"📊 TTM年化数据: 净利润={net_income/1e8:.2f}亿, 营收={operating_revenue/1e8:.2f}亿, "
+                           f"经营现金流={operating_cash_flow/1e8:.2f}亿, 资本支出={capital_expenditure/1e8:.2f}亿")
+                raw_q1_ni = _get_field_value(latest_income, "净利润")
+                logger.info(f"📊 对比: 原始{report_period}净利润={raw_q1_ni/1e8:.2f}亿, "
+                           f"简单×{annualize_factor:.0f}={raw_q1_ni*annualize_factor/1e8:.2f}亿, TTM={net_income/1e8:.2f}亿")
+            elif use_q3_fallback and q3_fallback_income is not None:
+                # 使用Q3合并报表数据(9个月累计)进行年化(×4/3)
+                f = q3_annualize_factor
+                net_income = _get_field_value(q3_fallback_income, "净利润") * f
+                operating_revenue = _get_field_value(q3_fallback_income, "营业总收入") * f
+                operating_profit = _get_field_value(q3_fallback_income, "营业利润") * f
+                operating_cash_flow = _get_field_value(q3_fallback_cf, "经营活动产生的现金流量净额") * f
+                depreciation = _get_field_value(q3_fallback_cf, "固定资产折旧、油气资产折耗、生产性生物资产折旧") * f
+                capital_expenditure = abs(_get_field_value(q3_fallback_cf, "购建固定资产、无形资产和其他长期资产所支付的现金")) * f
+                method_label = f"Q3合并报表×{f:.4f}"
+
+                raw_q1_ni = _get_field_value(latest_income, "净利润")
+                logger.info(f"📊 {method_label}数据: 净利润={net_income/1e8:.2f}亿, 营收={operating_revenue/1e8:.2f}亿, "
+                           f"经营现金流={operating_cash_flow/1e8:.2f}亿, 资本支出={capital_expenditure/1e8:.2f}亿")
+                logger.info(f"📊 对比: 原始{report_period}净利润={raw_q1_ni/1e8:.2f}亿, "
+                           f"简单×{annualize_factor:.0f}={raw_q1_ni*annualize_factor/1e8:.2f}亿, "
+                           f"Q3年化={net_income/1e8:.2f}亿")
+            else:
+                net_income = _get_field_value(latest_income, "净利润") * annualize_factor
+                operating_revenue = _get_field_value(latest_income, "营业总收入") * annualize_factor
+                operating_profit = _get_field_value(latest_income, "营业利润") * annualize_factor
+                operating_cash_flow = _get_field_value(latest_cash_flow, "经营活动产生的现金流量净额") * annualize_factor
+                depreciation = _get_field_value(latest_cash_flow, "固定资产折旧、油气资产折耗、生产性生物资产折旧") * annualize_factor
+                capital_expenditure = abs(_get_field_value(latest_cash_flow, "购建固定资产、无形资产和其他长期资产所支付的现金")) * annualize_factor
+                method_label = f"简单年化×{annualize_factor:.2f}"
+
+                if annualize_factor != 1.0:
+                    logger.info(f"📊 {method_label}数据: 净利润={net_income/1e8:.2f}亿, 营收={operating_revenue/1e8:.2f}亿, "
+                               f"经营现金流={operating_cash_flow/1e8:.2f}亿, 资本支出={capital_expenditure/1e8:.2f}亿")
+
             if depreciation == 0 and net_income > 0:
-                # 方法1：使用经营现金流与净利润的差额作为粗略估计
-                # （假设主要差异来自折旧等非现金项目）
                 if operating_cash_flow > net_income:
-                    estimated_depreciation = (operating_cash_flow - net_income) * 0.6  # 保守估计60%来自折旧
-                    depreciation = max(estimated_depreciation, operating_revenue * 0.03)  # 至少为营收的3%
-                    logger.warning(f"折旧数据缺失，使用估算值: {depreciation/100000000:.2f}亿元")
+                    estimated_depreciation = (operating_cash_flow - net_income) * 0.6
+                    depreciation = max(estimated_depreciation, operating_revenue * 0.03)
+                    logger.warning(f"折旧数据缺失，使用估算值: {depreciation/1e8:.2f}亿元")
                 else:
-                    # 后备方案：使用营业收入的3-5%作为折旧估算
-                    depreciation = operating_revenue * 0.04  # 保守使用4%
-                    logger.warning(f"折旧数据缺失且无法从现金流推算，使用营收4%作为估算: {depreciation/100000000:.2f}亿元")
-            
+                    depreciation = operating_revenue * 0.04
+                    logger.warning(f"折旧数据缺失且无法从现金流推算，使用营收4%作为估算: {depreciation/1e8:.2f}亿元")
+
             current_item = {
-                # 从利润表获取
                 "net_income": net_income,
                 "operating_revenue": operating_revenue,
-                "operating_profit": float(latest_income.get("营业利润", 0)),
-
-                # 从资产负债表计算营运资金
+                "operating_profit": operating_profit,
                 "working_capital": float(latest_balance.get("流动资产合计", 0)) - float(latest_balance.get("流动负债合计", 0)),
-
-                # 从现金流量表获取
                 "depreciation_and_amortization": depreciation,
-                "capital_expenditure": abs(float(latest_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0))),
-                "free_cash_flow": operating_cash_flow - abs(float(latest_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0)))
+                "capital_expenditure": capital_expenditure,
+                "free_cash_flow": operating_cash_flow - capital_expenditure
             }
             line_items.append(current_item)
-            logger.info("✓ Latest period data processed successfully")
+            logger.info(f"✓ Latest period data processed ({method_label})")
 
-            # 处理上一期间数据
-            prev_net_income = float(previous_income.get("净利润", 0))
-            prev_operating_revenue = float(previous_income.get("营业总收入", 0))
-            prev_operating_cash_flow = float(previous_cash_flow.get("经营活动产生的现金流量净额", 0))
-            
-            # 尝试获取折旧数据
-            prev_depreciation = float(previous_cash_flow.get("固定资产折旧、油气资产折耗、生产性生物资产折旧", 0))
-            
-            # 如果折旧数据缺失，使用估算值（与当期相同的逻辑）
+            # ---- 处理上一期间数据 ----
+            # 上期数据仅用于比较（如营运资金变化），使用简单年化即可
+            prev_net_income = _get_field_value(previous_income, "净利润") * prev_annualize_factor
+            prev_operating_revenue = _get_field_value(previous_income, "营业总收入") * prev_annualize_factor
+            prev_operating_cash_flow = _get_field_value(previous_cash_flow, "经营活动产生的现金流量净额") * prev_annualize_factor
+            prev_depreciation = _get_field_value(previous_cash_flow, "固定资产折旧、油气资产折耗、生产性生物资产折旧") * prev_annualize_factor
+            prev_capital_expenditure = abs(_get_field_value(previous_cash_flow, "购建固定资产、无形资产和其他长期资产所支付的现金")) * prev_annualize_factor
+
             if prev_depreciation == 0 and prev_net_income > 0:
                 if prev_operating_cash_flow > prev_net_income:
                     estimated_prev_depreciation = (prev_operating_cash_flow - prev_net_income) * 0.6
                     prev_depreciation = max(estimated_prev_depreciation, prev_operating_revenue * 0.03)
                 else:
                     prev_depreciation = prev_operating_revenue * 0.04
-            
+
             previous_item = {
                 "net_income": prev_net_income,
                 "operating_revenue": prev_operating_revenue,
-                "operating_profit": float(previous_income.get("营业利润", 0)),
+                "operating_profit": _get_field_value(previous_income, "营业利润") * prev_annualize_factor,
                 "working_capital": float(previous_balance.get("流动资产合计", 0)) - float(previous_balance.get("流动负债合计", 0)),
                 "depreciation_and_amortization": prev_depreciation,
-                "capital_expenditure": abs(float(previous_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0))),
-                "free_cash_flow": prev_operating_cash_flow - abs(float(previous_cash_flow.get("购建固定资产、无形资产和其他长期资产所支付的现金", 0)))
+                "capital_expenditure": prev_capital_expenditure,
+                "free_cash_flow": prev_operating_cash_flow - prev_capital_expenditure
             }
             line_items.append(previous_item)
             logger.info("✓ Previous period data processed successfully")

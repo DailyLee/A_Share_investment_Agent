@@ -11,7 +11,8 @@ from src.tools.openrouter_config import get_chat_completion, logger as api_logge
 try:
     from src.tools.sina_news import (
         get_sina_stock_news,
-        get_sina_market_news
+        get_sina_market_news,
+        get_sina_industry_news
     )
     SINA_AVAILABLE = True
     print("✓ 新浪财经新闻模块已加载")
@@ -24,7 +25,8 @@ try:
     from src.tools.eastmoney_news import (
         get_eastmoney_stock_news,
         get_eastmoney_index_news,
-        get_eastmoney_market_news
+        get_eastmoney_market_news,
+        get_eastmoney_industry_news
     )
     EASTMONEY_AVAILABLE = True
     print("✓ 东方财富新闻模块已加载")
@@ -453,6 +455,136 @@ def get_stock_news(symbol: str, max_news: int = 10, date: str = None) -> list:
             print(f"保存新闻数据到文件时出错: {e}")
 
     return final_news_list
+
+
+def _clean_industry_name(industry: str) -> str:
+    """清洗行业名称，去除申万分类级别后缀等无关字符"""
+    import re
+    cleaned = re.sub(r'[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅰⅱⅲⅳⅴIVX]+$', '', industry).strip()
+    cleaned = re.sub(r'[-_—\s]*(一级|二级|三级|[一二三四]级)$', '', cleaned).strip()
+    return cleaned if cleaned else industry
+
+
+def get_industry_news(industry: str, max_news: int = 10, date: str = None) -> list:
+    """获取行业新闻
+
+    Args:
+        industry: 行业名称，如 '白酒', '新能源', '医药生物'
+        max_news: 获取的新闻条数，默认10条
+        date: 截止日期，格式 "YYYY-MM-DD"
+
+    Returns:
+        list: 行业新闻列表
+    """
+    if not industry:
+        print("未提供行业名称，跳过行业新闻获取")
+        return []
+
+    industry = _clean_industry_name(industry)
+    print(f"行业名称(清洗后): {industry}")
+
+    max_news = min(max_news, 50)
+    cache_date = date if date else datetime.now().strftime("%Y-%m-%d")
+
+    news_dir = os.path.join("src", "data", "industry_news")
+    os.makedirs(news_dir, exist_ok=True)
+
+    safe_industry = industry.replace('/', '_').replace('\\', '_')
+    news_file = os.path.join(news_dir, f"{safe_industry}_news_{cache_date}.json")
+
+    if os.path.exists(news_file):
+        try:
+            file_mtime = os.path.getmtime(news_file)
+            if date:
+                cache_valid = True
+            else:
+                cache_date_obj = datetime.fromtimestamp(file_mtime).date()
+                cache_valid = cache_date_obj == datetime.now().date()
+
+            if cache_valid:
+                with open(news_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    cached_news = data.get("news", [])
+                    if len(cached_news) >= max_news:
+                        print(f"使用缓存的行业新闻数据: {news_file} ({len(cached_news)} 条)")
+                        return cached_news[:max_news]
+        except Exception as e:
+            print(f"读取行业新闻缓存失败: {e}")
+
+    print(f"开始获取 {industry} 行业新闻...")
+    all_news = []
+    seen_titles = set()
+
+    def _merge(source_news):
+        added = 0
+        for n in source_news:
+            title = n.get('title', '')
+            if title and title not in seen_titles:
+                seen_titles.add(title)
+                all_news.append(n)
+                added += 1
+        return added
+
+    if EASTMONEY_AVAILABLE:
+        try:
+            em_news = get_eastmoney_industry_news(industry, max_news=max_news)
+            cnt = _merge(em_news)
+            if cnt:
+                print(f"东方财富贡献 {cnt} 条行业新闻")
+        except Exception as e:
+            print(f"东方财富获取行业新闻失败: {e}")
+
+    if len(all_news) < max_news and SINA_AVAILABLE:
+        try:
+            sina_news = get_sina_industry_news(industry, max_news=max_news)
+            cnt = _merge(sina_news)
+            if cnt:
+                print(f"新浪财经贡献 {cnt} 条行业新闻")
+        except Exception as e:
+            print(f"新浪财经获取行业新闻失败: {e}")
+
+    if len(all_news) < max_news and ak is not None:
+        try:
+            print(f"尝试通过 akshare 补充 {industry} 行业新闻...")
+            news_df = ak.stock_news_em(symbol=industry)
+            if news_df is not None and not news_df.empty:
+                ak_news = []
+                for _, row in news_df.head(max_news).iterrows():
+                    title = str(row.get("新闻标题", "")).strip()
+                    if not title or len(title) < 8:
+                        continue
+                    ak_news.append({
+                        "title": title,
+                        "content": str(row.get("新闻内容", title)).strip(),
+                        "publish_time": str(row.get("发布时间", "")),
+                        "source": str(row.get("文章来源", "")).strip(),
+                        "url": str(row.get("新闻链接", "")).strip(),
+                        "keyword": industry
+                    })
+                cnt = _merge(ak_news)
+                if cnt:
+                    print(f"akshare 贡献 {cnt} 条行业新闻")
+        except Exception as e:
+            print(f"akshare 获取行业新闻失败: {e}")
+
+    new_news_list = all_news
+
+    if new_news_list:
+        try:
+            save_data = {
+                "date": cache_date,
+                "industry": industry,
+                "news": new_news_list,
+                "total_count": len(new_news_list),
+                "last_updated": datetime.now().isoformat()
+            }
+            with open(news_file, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, ensure_ascii=False, indent=2)
+            print(f"行业新闻已缓存到: {news_file}")
+        except Exception as e:
+            print(f"保存行业新闻缓存失败: {e}")
+
+    return new_news_list[:max_news]
 
 
 def get_news_sentiment(news_list: list, num_of_news: int = 5) -> float:

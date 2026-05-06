@@ -299,6 +299,102 @@ def get_eastmoney_market_news(max_news: int = 50) -> List[Dict]:
     return news_list
 
 
+def get_eastmoney_industry_news(industry: str, max_news: int = 20) -> List[Dict]:
+    """
+    从东方财富网搜索获取行业新闻
+    
+    Args:
+        industry: 行业名称，如 '白酒', '新能源'
+        max_news: 最多获取的新闻条数
+    
+    Returns:
+        新闻列表
+    """
+    news_list = []
+    
+    try:
+        print(f"正在从东方财富网搜索 {industry} 行业新闻...")
+        
+        api_url = 'https://search-api-web.eastmoney.com/search/jsonp'
+        
+        params = {
+            'cb': 'jQuery_callback',
+            'param': json.dumps({
+                "uid": "",
+                "keyword": f"{industry}行业",
+                "type": ["cmsArticleWebOld"],
+                "client": "web",
+                "clientType": "web",
+                "clientVersion": "curr",
+                "param": {
+                    "cmsArticleWebOld": {
+                        "searchScope": "default",
+                        "sort": "default",
+                        "pageIndex": 1,
+                        "pageSize": max_news,
+                        "preTag": "",
+                        "postTag": ""
+                    }
+                }
+            })
+        }
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://so.eastmoney.com/'
+        }
+        
+        response = requests.get(api_url, params=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            text = response.text
+            json_start = text.find('(')
+            json_end = text.rfind(')')
+            if json_start != -1 and json_end != -1:
+                json_str = text[json_start + 1:json_end]
+                data = json.loads(json_str)
+                
+                cms_data = data.get('result', {}).get('cmsArticleWebOld', [])
+                articles = cms_data if isinstance(cms_data, list) else cms_data.get('list', [])
+                
+                for article in articles[:max_news]:
+                    title = article.get('title', '').replace('<em>', '').replace('</em>', '')
+                    content = article.get('content', '') or article.get('mediaName', '') or title
+                    content = re.sub(r'<[^>]+>', '', content).strip()
+                    
+                    if not title or len(title) < 6:
+                        continue
+                    
+                    news_list.append({
+                        'title': title,
+                        'content': content if len(content) > len(title) else title,
+                        'publish_time': article.get('date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+                        'source': article.get('mediaName', '东方财富网'),
+                        'url': article.get('url', ''),
+                        'keyword': industry
+                    })
+                
+                if news_list:
+                    print(f"✓ 从东方财富搜索获取 {len(news_list)} 条 {industry} 行业新闻")
+    
+    except Exception as e:
+        print(f"东方财富搜索行业新闻出错: {e}")
+    
+    if not news_list:
+        print(f"东方财富搜索API未返回结果，尝试从市场要闻中筛选 {industry} 相关新闻...")
+        market_news = get_eastmoney_market_news(max_news * 3)
+        for news in market_news:
+            if industry in news['title'] or industry in news['content']:
+                news['keyword'] = industry
+                news_list.append(news)
+                if len(news_list) >= max_news:
+                    break
+        if news_list:
+            print(f"✓ 从市场要闻中筛选出 {len(news_list)} 条 {industry} 相关新闻")
+    
+    return news_list
+
+
 def get_default_market_news(max_news: int = 50) -> List[Dict]:
     """
     获取默认的市场要闻（使用简单HTTP请求）
